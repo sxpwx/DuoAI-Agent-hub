@@ -1,5 +1,6 @@
 import { App, Modal } from "obsidian";
 import { ConfirmDecision, ConfirmRequest } from "../types";
+import { t } from "../i18n";
 
 export function requestConfirmation(app: App, req: ConfirmRequest, timeoutSec: number): Promise<ConfirmDecision> {
   return new Promise((resolve) => {
@@ -26,19 +27,17 @@ export class ConfirmModal extends Modal {
     modalEl.addClass("ah-confirm-modal");
     if (this.req.tier === "danger") modalEl.addClass("ah-danger");
 
-    const badge = this.req.tier === "danger" ? "危险操作" : "写入操作";
-    contentEl.createEl("h3", { text: `${badge}确认：${this.req.tool}` });
+    contentEl.createEl("h3", {
+      text: this.req.tier === "danger" ? t("confirmDangerTitle", { tool: this.req.tool }) : t("confirmWriteTitle", { tool: this.req.tool }),
+    });
     contentEl.createEl("p", {
       cls: "ah-confirm-hint",
-      text:
-        this.req.tier === "danger"
-          ? "Agent 请求执行删除类操作，请仔细核对目标路径。删除会移入回收站，可恢复。"
-          : "Agent 请求修改你的笔记库，请核对以下内容。",
+      text: this.req.tier === "danger" ? t("confirmDangerHint") : t("confirmWriteHint"),
     });
     contentEl.createEl("pre", { cls: "ah-confirm-summary", text: this.req.summary });
 
     const details = contentEl.createEl("details");
-    details.createEl("summary", { text: "完整参数 JSON" });
+    details.createEl("summary", { text: t("fullArgs") });
     details.createEl("pre", {
       cls: "ah-confirm-args",
       text: JSON.stringify(this.req.args, null, 2).slice(0, 4000),
@@ -47,7 +46,7 @@ export class ConfirmModal extends Modal {
     const remain = contentEl.createEl("p", { cls: "ah-confirm-timer" });
     let left = this.timeoutSec;
     const tick = () => {
-      remain.setText(`${left} 秒内未响应将自动拒绝`);
+      remain.setText(t("timeoutHint", { s: left }));
       if (left <= 0) {
         this.finish("deny");
         return;
@@ -58,15 +57,12 @@ export class ConfirmModal extends Modal {
     tick();
 
     const btns = contentEl.createDiv({ cls: "ah-confirm-buttons" });
-    const deny = btns.createEl("button", { text: "拒绝" });
+    const deny = btns.createEl("button", { text: t("deny") });
     deny.addEventListener("click", () => this.finish("deny"));
-    const allowSession = btns.createEl("button", {
-      text: "允许本次会话全部操作",
-      cls: "ah-btn-warn",
-    });
+    const allowSession = btns.createEl("button", { text: t("allowSession"), cls: "ah-btn-warn" });
     allowSession.addEventListener("click", () => this.finish("allow-session"));
     const allow = btns.createEl("button", {
-      text: this.req.tier === "danger" ? "确认执行" : "允许",
+      text: this.req.tier === "danger" ? t("confirmExecute") : t("allow"),
       cls: this.req.tier === "danger" ? "mod-warning" : "mod-cta",
     });
     allow.addEventListener("click", () => this.finish("allow"));

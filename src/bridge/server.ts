@@ -3,6 +3,7 @@ import { AddressInfo } from "net";
 import * as crypto from "crypto";
 import { ConfirmHandler, PermissionMode } from "../types";
 import { TOOL_DEFS, VaultTools, summarize } from "./tools";
+import { t } from "../i18n";
 
 /**
  * 本地安全桥：仅监听 127.0.0.1，随机端口 + 会话令牌。
@@ -53,7 +54,7 @@ export class BridgeServer {
   async executeGated(name: string, args: Record<string, unknown>): Promise<string> {
     const def = TOOL_DEFS.find((t) => t.name === name);
     if (!def) throw new Error(`未知工具：${name}`);
-    if (def.network && !this.getNetwork()) throw new Error("联网工具已在插件设置中禁用。");
+    if (def.network && !this.getNetwork()) throw new Error(t("networkDisabled"));
     const tier = def.tier;
     const mode = this.getMode();
     let decision = "auto";
@@ -61,7 +62,7 @@ export class BridgeServer {
       const d = await this.confirm({ tool: name, tier, args, summary: summarize(name, args) });
       decision = d;
       if (d === "allow-session") this.sessionAllowAll = true;
-      if (d === "deny") throw new Error("用户拒绝了此操作。请调整方案或跳过该步骤。");
+      if (d === "deny") throw new Error(t("refusedByUser"));
     }
     this.onActivity?.(name, tier, decision);
     return await this.tools.execute(name, args);

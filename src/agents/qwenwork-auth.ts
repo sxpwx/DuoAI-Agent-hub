@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import { requestUrl } from "obsidian";
 import { COSY_SITES, CosyCred } from "./qwenwork-chat";
+import { t } from "../i18n";
 
 /**
  * COSY 站点（千问办公 / Qoder CN）登录：PKCE 设备流 + PAT 交换。
@@ -80,7 +81,7 @@ export async function cosyDeviceLogin(
   const until = Date.now() + timeoutMs;
   let dt: any = null;
   while (Date.now() < until) {
-    if (isCancelled()) throw new Error("登录已取消");
+    if (isCancelled()) throw new Error(t("loginCancelled"));
     try {
       const r = await openapi(siteId, "/api/v1/deviceToken/poll", { query: { nonce, verifier, challenge_method: "S256" } });
       if (r.status === 200 && String(r.json?.token ?? "").trim()) {
@@ -92,7 +93,7 @@ export async function cosyDeviceLogin(
     }
     await new Promise((r) => setTimeout(r, 2000));
   }
-  if (!dt) throw new Error("登录超时（5 分钟）或已取消，请重试");
+  if (!dt) throw new Error(t("loginTimeout"));
 
   // Qoder CN 优先换 job token；千问办公设备令牌即聊天令牌
   let access = dt.token;
@@ -125,7 +126,7 @@ export async function cosyDeviceLogin(
   } catch {
     /* 用户信息可选 */
   }
-  if (!String(uid ?? "").trim()) throw new Error("登录成功但未获取到用户身份，请重试");
+  if (!String(uid ?? "").trim()) throw new Error(t("loginNoUid"));
 
   const cred: CosyCred = {
     type: "oauth",
@@ -149,9 +150,9 @@ export async function cosyDeviceLogin(
 export async function cosyPatLogin(siteId: string, pat: string): Promise<CosyCred> {
   const site = COSY_SITES[siteId];
   const r = await openapi(siteId, "/api/v1/jobToken/exchange", { method: "POST", body: { personal_token: pat } });
-  if (r.status !== 200) throw new Error(`${site.name} PAT 交换失败 HTTP ${r.status}：请确认令牌有效`);
+  if (r.status !== 200) throw new Error(t("patExchangeFail", { agent: site.name, status: r.status }));
   const token = String(r.json?.token ?? r.json?.job_token ?? "").trim();
-  if (!token) throw new Error("PAT 交换返回空令牌");
+  if (!token) throw new Error(t("patEmpty"));
   let uid = "";
   let email = "";
   let name = "";
@@ -165,7 +166,7 @@ export async function cosyPatLogin(siteId: string, pat: string): Promise<CosyCre
   } catch {
     /* 可选 */
   }
-  if (!uid) throw new Error("PAT 登录成功但无法确定用户 id");
+  if (!uid) throw new Error(t("patNoUid"));
   const cred: CosyCred = {
     type: "oauth",
     access: token,

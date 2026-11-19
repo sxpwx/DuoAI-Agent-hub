@@ -1,6 +1,7 @@
 import { ApiConfig, RunContext } from "../types";
 import { TOOL_DEFS } from "../bridge/tools";
 import { cosyChat, CosyCred } from "./qwenwork-chat";
+import { t } from "../i18n";
 
 type ExecFn = (name: string, args: Record<string, unknown>) => Promise<string>;
 
@@ -62,7 +63,7 @@ export async function runCosyLoop(
   ];
   for (let iter = 1; ; iter++) {
     if (ctx.signal.aborted) return;
-    ctx.onEvent({ type: "status", text: `请求模型（第 ${iter} 轮）…` });
+    ctx.onEvent({ type: "status", text: t("statusRequestRound", { n: iter }) });
     let content = "";
     let stop = "";
     const calls: { id: string; name: string; args: string }[] = [];
@@ -102,7 +103,7 @@ export async function runApiLoop(
   networkEnabled = true
 ): Promise<void> {
   if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
-    ctx.onEvent({ type: "error", text: "请先在设置中配置 Base URL、API Key 和模型 ID。" });
+    ctx.onEvent({ type: "error", text: t("fillApiCfg") });
     return;
   }
   const tools = toolDefs(networkEnabled);
@@ -114,7 +115,7 @@ export async function runApiLoop(
 
   for (let iter = 1; ; iter++) {
     if (ctx.signal.aborted) return;
-    ctx.onEvent({ type: "status", text: `请求模型（第 ${iter} 轮）…` });
+    ctx.onEvent({ type: "status", text: t("statusRequestRound", { n: iter }) });
     let res: Response;
     try {
       res = await fetch(endpoint, {

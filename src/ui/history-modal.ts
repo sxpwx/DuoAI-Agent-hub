@@ -1,6 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import { Conversation } from "../types";
 import { getAgent } from "../agents/registry";
+import { t } from "../i18n";
 
 export class HistoryModal extends Modal {
   constructor(
@@ -14,35 +15,35 @@ export class HistoryModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("ah-history-modal");
-    contentEl.createEl("h3", { text: "历史会话" });
+    contentEl.createEl("h3", { text: t("historyTitle") });
     if (!this.conversations.length) {
-      contentEl.createEl("p", { cls: "ah-setting-desc", text: "暂无历史会话。发送第一条消息后会自动保存。" });
+      contentEl.createEl("p", { cls: "ah-setting-desc", text: t("historyEmpty") });
       return;
     }
     const list = contentEl.createDiv({ cls: "ah-history-list" });
     for (const c of this.conversations) {
       const row = list.createDiv({ cls: "ah-history-row" });
       const main = row.createDiv({ cls: "ah-history-main" });
-      main.createDiv({ cls: "ah-history-title", text: c.title || "（无标题）" });
+      main.createDiv({ cls: "ah-history-title", text: c.title || t("untitled") });
       const agent = getAgent(c.agentId)?.label ?? c.agentId;
       const date = new Date(c.updatedAt).toLocaleString();
       main.createDiv({
         cls: "ah-history-meta",
-        text: `${agent} · ${c.model || "默认模型"} · ${date} · ${c.messages.length} 条消息`,
+        text: t("historyMeta", { agent, model: c.model || t("defaultModel"), date, n: c.messages.length }),
       });
       const btns = row.createDiv({ cls: "ah-history-btns" });
-      const open = btns.createEl("button", { text: "打开", cls: "mod-cta" });
+      const open = btns.createEl("button", { text: t("open"), cls: "mod-cta" });
       open.addEventListener("click", () => {
         this.close();
         this.actions.open(c);
       });
-      const del = btns.createEl("button", { text: "删除" });
+      const del = btns.createEl("button", { text: t("delete") });
       del.addEventListener("click", async () => {
         await this.actions.remove(c.id);
         row.remove();
-        new Notice("已删除该会话");
+        new Notice(t("deleted"));
         if (!list.children.length) {
-          list.createDiv({ cls: "ah-setting-desc", text: "暂无历史会话。" });
+          list.createDiv({ cls: "ah-setting-desc", text: t("historyEmptyAfterDelete") });
         }
       });
     }

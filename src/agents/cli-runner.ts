@@ -5,6 +5,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import { CliAgentSpec, RunContext } from "../types";
 import { resolveCli } from "./detect";
+import { t } from "../i18n";
 
 /** Windows 下杀整棵进程树（CLI 会派生 MCP 等子进程，单杀父进程会留下占用管道的孤儿） */
 function killTree(child: ChildProcess) {
@@ -35,7 +36,7 @@ export async function runCliAgent(spec: CliAgentSpec, cliPath: string, ctx: RunC
   if (!resolved) {
     ctx.onEvent({
       type: "error",
-      text: `无法安全启动 CLI（${cliPath}）。请在设置中直接指定 .exe 或 cli.js 路径。`,
+      text: t("cannotSafeStart", { path: cliPath }),
     });
     return;
   }
@@ -46,7 +47,7 @@ export async function runCliAgent(spec: CliAgentSpec, cliPath: string, ctx: RunC
   try {
     const ok = await attempt(spec, resolved.exe, resolved.prefixArgs, resolved.env, spec.buildArgs(resolved.exe, ctx2), spec.stdinJson, ctx);
     if (!ok && spec.fallbackArgs) {
-      ctx.onEvent({ type: "status", text: "主参数不被支持，使用兼容参数重试…" });
+      ctx.onEvent({ type: "status", text: t("fallbackRetry") });
       await attempt(spec, resolved.exe, resolved.prefixArgs, resolved.env, spec.fallbackArgs(resolved.exe, ctx2), false, ctx);
     }
   } finally {
@@ -107,7 +108,7 @@ function attempt(
       // 兜底：2 秒内仍未结束则立即解除 UI 阻塞
       abortGrace = window.setTimeout(() => {
         if (!settled) {
-          ctx.onEvent({ type: "status", text: "已停止" });
+          ctx.onEvent({ type: "status", text: t("statusStopped") });
           finish(false);
         }
       }, 2000);
@@ -153,7 +154,7 @@ function attempt(
     child.on("exit", (code) => {
       state.code = code;
       if (ctx.signal.aborted) {
-        ctx.onEvent({ type: "status", text: "已停止" });
+        ctx.onEvent({ type: "status", text: t("statusStopped") });
         finish(false);
         return;
       }
@@ -169,11 +170,11 @@ function attempt(
       const tail = state.stderr.trim().split(/\r?\n/).slice(-6).join("\n");
       ctx.onEvent({
         type: "error",
-        text: `CLI 退出（code=${code}）且无结果。${tail ? "\n" + clip(tail, 800) : ""}${
+        text: t("cliNoResult", { code: String(code) }) + `${tail ? "\n" + clip(tail, 800) : ""}${
           /login|auth|unauthorized|not logged/i.test(state.stderr)
-            ? "\n提示：该 CLI 可能尚未登录，请先在终端完成登录。"
+            ? t("cliLoginHint")
             : code === 0
-              ? "\n提示：请确认设置中的 CLI 路径指向命令行工具而非桌面 GUI（如 WorkBuddy.exe 是 GUI，不能用作 CLI）。"
+              ? t("cliGuiHint")
               : ""
         }`,
       });
@@ -181,7 +182,7 @@ function attempt(
     });
 
     // 通过 stdin 传入提示词（避免命令行注入）
-    const fullPrompt = ctx.systemPrompt + "\n\n用户请求：\n" + ctx.prompt;
+    const fullPrompt = ctx.systemPrompt + "\n\n" + t("userRequestPrefix") + "\n" + ctx.prompt;
     try {
       if (stdinJson) {
         child.stdin.write(
@@ -201,7 +202,7 @@ function mapClaude(obj: any, ctx: RunContext, state: AttemptResult) {
   switch (obj?.type) {
     case "system":
       if (obj.subtype === "init") {
-        ctx.onEvent({ type: "status", text: `会话已建立${obj.model ? " · 模型 " + obj.model : ""}` });
+        ctx.onEvent({ type: "status", text: t("sessionInit") + (obj.model ? t("sessionModel", { model: obj.model }) : "") });
       }
       break;
     case "assistant":
@@ -228,9 +229,9 @@ function mapClaude(obj: any, ctx: RunContext, state: AttemptResult) {
       if (obj.subtype === "success" && !obj.is_error) {
         ctx.onEvent({ type: "done", text: obj.result ?? "" });
       } else {
-        let text = obj.result ?? obj.error ?? "执行失败";
+        let text = obj.result ?? obj.error ?? t("execFailed");
         if (/not logged in|please run \/login|login required/i.test(text)) {
-          text += "\n提示：该 CLI 尚未登录，请先在终端完成登录（设置页有登录指引）。";
+          text += t("cliNotLoggedHint");
         }
         ctx.onEvent({ type: "error", text });
       }

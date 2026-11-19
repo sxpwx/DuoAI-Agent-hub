@@ -12,6 +12,7 @@ import { repairLegacyCreds, readCosyCred, readClaudeLocalOAuth } from "./agents/
 import { ChatView, VIEW_TYPE } from "./ui/chat-view";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { AgentHubSettingTab } from "./settings";
+import { setLangOverride, t } from "./i18n";
 
 export default class AgentHubPlugin extends Plugin {
   declare settings: AgentHubSettings;
@@ -40,7 +41,7 @@ export default class AgentHubPlugin extends Plugin {
     try {
       await this.bridge.start();
     } catch (e: any) {
-      new Notice(`Agent Hub：本地桥启动失败 ${e?.message ?? e}`);
+      new Notice(t("bridgeFail", { err: String(e?.message ?? e) }));
     }
 
     // 旧版凭据形态自动修复（兼容历史写入）
@@ -96,9 +97,11 @@ export default class AgentHubPlugin extends Plugin {
     delete (this.settings as any).api;
     delete (this.settings as any).pat;
     delete (this.settings as any).maxApiIterations;
+    setLangOverride(this.settings.language);
   }
 
   async saveSettings() {
+    setLangOverride(this.settings.language);
     await this.saveData(this.settings);
   }
 
@@ -179,7 +182,7 @@ export default class AgentHubPlugin extends Plugin {
   ): Promise<void> {
     const spec = getAgent(agentId) ?? AGENTS[0];
     if (!this.bridge.port) {
-      onEvent({ type: "error", text: "本地桥未启动，无法运行 Agent。请重启插件。" });
+      onEvent({ type: "error", text: t("bridgeNotStarted") });
       return;
     }
     const vaultPath = this.getVaultPath();
@@ -210,7 +213,7 @@ export default class AgentHubPlugin extends Plugin {
       if (spec.protocol === "cosy") {
         const cosy = readCosyCred(spec.site!);
         if (!cosy) {
-          onEvent({ type: "error", text: `${spec.label}尚未登录。请点击顶栏「登录」完成授权。` });
+          onEvent({ type: "error", text: t("notLoggedInAgent", { agent: spec.label }) });
           return;
         }
         await runCosyLoop(cosy, spec.site!, ctx, exec, this.settings.networkTools);
@@ -240,7 +243,7 @@ export default class AgentHubPlugin extends Plugin {
       if (!det.available || !det.path) {
         onEvent({
           type: "error",
-          text: `未检测到 ${spec.label} CLI。\n安装方式：${spec.installHint}${spec.loginHint ? "\n" + spec.loginHint : ""}`,
+          text: t("cliMissing", { agent: spec.label, hint: spec.installHint }) + "\n" + t(`agent.${spec.id}.hint`),
         });
         return;
       }

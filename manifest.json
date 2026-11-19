@@ -3,7 +3,7 @@
   "name": "Agent Hub",
   "version": "0.1.0",
   "minAppVersion": "1.4.0",
-  "description": "调用千问办公、WorkBuddy、Claude Code、Codex、豆包办公等 Agent 操作你的 vault。默认重要操作需确认，可切换最高权限。",
+  "description": "调用千问办公、Qoder CN、WorkBuddy、Claude Code、Codex、豆包等 Agent 操作 vault；内置协议、三级权限确认、双语界面。Run QwenWork/Qoder/WorkBuddy/Claude/Codex/Doubao agents on your vault: built-in protocols, 3-tier permission confirmations, bilingual UI.",
   "author": "Agent Hub",
   "isDesktopOnly": true
 }

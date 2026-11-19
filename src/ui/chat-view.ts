@@ -5,6 +5,7 @@ import { fetchDynamicModels } from "../agents/models";
 import { readCosyCred } from "../agents/qwenwork-auth";
 import { AgentEvent, AgentSpec, CliAgentSpec, Conversation, NativeAgentSpec, StoredMessage } from "../types";
 import { summarize, toolTier } from "../bridge/tools";
+import { t } from "../i18n";
 import { HistoryModal } from "./history-modal";
 import { LoginModal } from "./login-modal";
 import type AgentHubPlugin from "../main";
@@ -65,7 +66,7 @@ export class ChatView extends ItemView {
     });
 
     this.modelSelect = header.createEl("select", { cls: "ah-model-select" });
-    const refreshBtn = header.createEl("button", { cls: "ah-icon-btn", text: "↻", attr: { "aria-label": "刷新模型列表" } });
+    const refreshBtn = header.createEl("button", { cls: "ah-icon-btn", text: "↻", attr: { "aria-label": t("refreshModels") } });
     refreshBtn.addEventListener("click", () => this.refreshModels(true));
 
     this.permBtn = header.createEl("button", { cls: "ah-perm-btn" });
@@ -74,7 +75,7 @@ export class ChatView extends ItemView {
       s.permissionMode = s.permissionMode === "confirm" ? "full" : "confirm";
       await this.plugin.saveSettings();
       this.updatePermBtn();
-      new Notice(s.permissionMode === "full" ? "已切换为最高权限：所有操作不再确认" : "已恢复默认：重要操作需要确认");
+      new Notice(s.permissionMode === "full" ? t("permFullNotice") : t("permConfirmNotice"));
     });
     this.updatePermBtn();
 
@@ -92,7 +93,7 @@ export class ChatView extends ItemView {
       }
     });
 
-    const histBtn = header.createEl("button", { cls: "ah-icon-btn", text: "历史", attr: { "aria-label": "查看历史会话" } });
+    const histBtn = header.createEl("button", { cls: "ah-icon-btn", text: t("history"), attr: { "aria-label": t("history") } });
     histBtn.addEventListener("click", async () => {
       const all = await this.plugin.loadHistory();
       new HistoryModal(this.app, all, {
@@ -104,7 +105,7 @@ export class ChatView extends ItemView {
       }).open();
     });
 
-    const newBtn = header.createEl("button", { cls: "ah-icon-btn", text: "＋", attr: { "aria-label": "新会话" } });
+    const newBtn = header.createEl("button", { cls: "ah-icon-btn", text: "＋", attr: { "aria-label": t("newSession") } });
     newBtn.addEventListener("click", () => {
       if (this.abort) return;
       this.conv = null;
@@ -114,7 +115,7 @@ export class ChatView extends ItemView {
       this.lastToolCard = null;
       this.lastToolMsg = null;
       this.plugin.bridge.resetSession();
-      this.updateStatus("新会话已开始");
+      this.updateStatus(t("statusNewSession"));
     });
 
     this.statusEl = root.createDiv({ cls: "ah-status" });
@@ -124,7 +125,7 @@ export class ChatView extends ItemView {
     const input = root.createDiv({ cls: "ah-input" });
     this.inputEl = input.createEl("textarea", {
       cls: "ah-textarea",
-      attr: { placeholder: "描述你想让 Agent 对笔记库做什么…（Enter 发送，Shift+Enter 换行）", rows: "3" },
+      attr: { placeholder: t("chatPlaceholder"), rows: "3" },
     });
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -132,7 +133,7 @@ export class ChatView extends ItemView {
         this.send();
       }
     });
-    this.sendBtn = input.createEl("button", { cls: "ah-send-btn mod-cta", text: "发送" });
+    this.sendBtn = input.createEl("button", { cls: "ah-send-btn mod-cta", text: t("send") });
     this.sendBtn.addEventListener("click", () => {
       if (this.abort) this.stop();
       else this.send();
@@ -145,15 +146,15 @@ export class ChatView extends ItemView {
   private showEmpty() {
     this.messagesEl.createDiv({
       cls: "ah-empty",
-      text: "选择 Agent 与模型后输入任务，例如：\n「总结 projects 文件夹下的所有笔记，生成一篇周报」\n\nAgent 只能操作当前 vault；写入/删除默认需要你确认。\n顶栏「历史」可查看和继续过去的会话。",
+      text: t("chatEmpty"),
     });
   }
 
   private updatePermBtn() {
     const full = this.plugin.settings.permissionMode === "full";
-    this.permBtn.setText(full ? "权限：最高" : "权限：需确认");
+    this.permBtn.setText(full ? t("permFull") : t("permConfirm"));
     this.permBtn.toggleClass("ah-perm-full", full);
-    this.permBtn.setAttribute("aria-label", full ? "当前为最高权限，点击恢复确认模式" : "当前重要操作需确认，点击切换最高权限");
+    this.permBtn.setAttribute("aria-label", full ? t("permFullTip") : t("permConfirmTip"));
   }
 
   private updateStatus(text?: string) {
@@ -163,12 +164,10 @@ export class ChatView extends ItemView {
     }
     const spec = getAgent(this.agentSelect.value);
     if (spec?.kind === "native") {
-      this.statusEl.setText("内置协议 · 无需 CLI");
+      this.statusEl.setText(t("statusBuiltin"));
     } else if (spec?.kind === "cli") {
       const det = detectCli(spec, this.plugin.settings.cliPaths[spec.id]);
-      this.statusEl.setText(det.available ? `就绪 · ${det.path}` : `未检测到 CLI · ${spec.installHint}`);
-    } else {
-      this.statusEl.setText("API 模式 · 请在设置中配置密钥");
+      this.statusEl.setText(det.available ? `${t("statusReady")} · ${det.path}` : t("statusCliMissing", { hint: spec.installHint }));
     }
   }
 
@@ -185,7 +184,7 @@ export class ChatView extends ItemView {
         const dyn = await fetchDynamicModels(spec, cred, cosy);
         if (dyn.length) models = Array.from(new Set([...dyn, ...spec.models]));
       }
-      if (!models.length) models = ["（在设置中填写模型 ID）"];
+      if (!models.length) models = [t("modelPlaceholder")];
     } else {
       models = this.modelCache[id] && !force ? this.modelCache[id] : [...spec.models];
       if (force || !this.modelCache[id]) {
@@ -193,7 +192,7 @@ export class ChatView extends ItemView {
         if (cli.dynamicModels) {
           const det = detectCli(cli, this.plugin.settings.cliPaths[id]);
           if (det.available && det.path) {
-            this.updateStatus("正在获取模型列表…");
+            this.updateStatus(t("statusFetchingModels"));
             const dyn = await cli.dynamicModels(det.path).catch(() => []);
             if (dyn.length) models = Array.from(new Set([...dyn, ...spec.models]));
           }
@@ -227,7 +226,7 @@ export class ChatView extends ItemView {
           : !!(this.plugin.settings.credentials[id]?.apiKey || this.plugin.settings.credentials[id]?.oauthToken);
       if (!ready) {
         this.loginBtn.show();
-        this.updateStatus("未登录/未配置凭据 · 自动弹出配置窗口");
+        this.updateStatus(t("statusNotLogged"));
         if (!this.autoLoginShown.has(id)) {
           this.autoLoginShown.add(id);
           this.openLogin(spec, null);
@@ -346,7 +345,7 @@ export class ChatView extends ItemView {
 
   async loadConversation(c: Conversation) {
     if (this.abort) {
-      new Notice("Agent 运行中，请先停止");
+      new Notice(t("runningStopFirst"));
       return;
     }
     this.conv = c;
@@ -362,7 +361,7 @@ export class ChatView extends ItemView {
       this.modelSelect.value = c.model;
     }
     for (const m of c.messages) this.renderStored(m);
-    this.updateStatus(`已加载历史会话「${c.title}」，可直接继续对话`);
+    this.updateStatus(t("statusLoadedHistory", { title: c.title }));
     this.scrollDown();
   }
 
@@ -372,13 +371,13 @@ export class ChatView extends ItemView {
     } else if (m.role === "assistant") {
       const el = this.messagesEl.createDiv({ cls: "ah-msg ah-assistant" });
       this.addMsgActions(el, m.text ?? "", false);
-      el.createDiv({ cls: "ah-role", text: "Agent" });
+      el.createDiv({ cls: "ah-role", text: t("roleAgent") });
       const content = el.createDiv({ cls: "ah-content" });
       MarkdownRenderer.render(this.app, m.text ?? "", content, "", this).catch(() => content.setText(m.text ?? ""));
     } else if (m.role === "error") {
       const el = this.messagesEl.createDiv({ cls: "ah-msg ah-error" });
       this.addMsgActions(el, m.text ?? "", false);
-      el.createDiv({ cls: "ah-role", text: "错误" });
+      el.createDiv({ cls: "ah-role", text: t("roleError") });
       el.createDiv({ cls: "ah-content", text: m.text ?? "" });
     } else if (m.role === "tool") {
       this.addToolCard(m.tool ?? "", m.args ?? {}, false);
@@ -404,29 +403,29 @@ export class ChatView extends ItemView {
 
     this.lastBubble = null;
     this.abort = new AbortController();
-    this.sendBtn.setText("停止");
+    this.sendBtn.setText(t("stop"));
     this.sendBtn.removeClass("mod-cta");
     this.sendBtn.addClass("ah-stop");
-    this.updateStatus("Agent 运行中…");
+    this.updateStatus(t("statusRunning"));
 
     try {
       await this.plugin.runAgent(conv.agentId, conv.model, contextPrompt, (e) => this.onEvent(e), this.abort.signal);
     } catch (e: any) {
-      this.addError(`运行异常：${e?.message ?? e}`);
+      this.addError(t("runException", { err: String(e?.message ?? e) }));
     } finally {
       this.abort = null;
-      this.sendBtn.setText("发送");
+      this.sendBtn.setText(t("send"));
       this.sendBtn.addClass("mod-cta");
       this.sendBtn.removeClass("ah-stop");
       this.flushRender();
       this.flushSave();
-      this.updateStatus("就绪");
+      this.updateStatus(t("statusReady"));
     }
   }
 
   private resend(text: string) {
     if (this.abort) {
-      new Notice("Agent 运行中，请先停止");
+      new Notice(t("runningStopFirst"));
       return;
     }
     this.inputEl.value = text;
@@ -436,7 +435,7 @@ export class ChatView extends ItemView {
   private stop() {
     this.plugin.cancelPendingConfirm();
     this.abort?.abort();
-    this.updateStatus("正在停止…");
+    this.updateStatus(t("statusStopping"));
   }
 
   private onEvent(e: AgentEvent) {
@@ -460,12 +459,12 @@ export class ChatView extends ItemView {
         }
         this.flushRender();
         this.flushSave();
-        this.updateStatus("完成");
+        this.updateStatus(t("statusDone"));
         break;
       case "error":
         this.addError(e.text);
         this.flushSave();
-        this.updateStatus("出错");
+        this.updateStatus(t("statusError"));
         break;
     }
   }
@@ -479,8 +478,8 @@ export class ChatView extends ItemView {
       ev.stopPropagation();
       navigator.clipboard
         .writeText(copyText)
-        .then(() => new Notice("已复制到剪贴板"))
-        .catch(() => new Notice("复制失败"));
+        .then(() => new Notice(t("copied")))
+        .catch(() => new Notice(t("copyFail")));
     });
     if (canResend) {
       const re = bar.createEl("button", { cls: "ah-mini-btn", text: "重新发送" });
@@ -494,7 +493,7 @@ export class ChatView extends ItemView {
   private addUserBubble(text: string, live: boolean) {
     const el = this.messagesEl.createDiv({ cls: "ah-msg ah-user" });
     this.addMsgActions(el, text, true);
-    el.createDiv({ cls: "ah-role", text: "我" });
+    el.createDiv({ cls: "ah-role", text: t("roleMe") });
     el.createDiv({ cls: "ah-content", text });
     this.scrollDown();
   }
@@ -512,10 +511,10 @@ export class ChatView extends ItemView {
         ev.stopPropagation();
         navigator.clipboard
           .writeText(bubble.raw)
-          .then(() => new Notice("已复制到剪贴板"))
-          .catch(() => new Notice("复制失败"));
+          .then(() => new Notice(t("copied")))
+          .catch(() => new Notice(t("copyFail")));
       });
-      el.createDiv({ cls: "ah-role", text: "Agent" });
+      el.createDiv({ cls: "ah-role", text: t("roleAgent") });
       el.insertBefore(bar, el.firstChild);
       // 记录到会话
       const msg: StoredMessage = { role: "assistant", text: "", ts: Date.now() };
@@ -558,12 +557,12 @@ export class ChatView extends ItemView {
     head.createSpan({ cls: "ah-tool-name", text: name });
     head.createSpan({
       cls: "ah-tool-tier",
-      text: tier === "danger" ? "危险" : tier === "write" ? "写入" : "读取",
+      text: tier === "danger" ? t("tierDanger") : tier === "write" ? t("tierWrite") : t("tierRead"),
     });
-    head.createSpan({ cls: "ah-tool-status", text: "执行中…" });
+    head.createSpan({ cls: "ah-tool-status", text: t("toolRunning") });
     card.createDiv({ cls: "ah-tool-summary", text: summarize(name, args).slice(0, 300) });
     const details = card.createEl("details");
-    details.createEl("summary", { text: "参数" });
+    details.createEl("summary", { text: t("params") });
     details.createEl("pre", { text: JSON.stringify(args, null, 2).slice(0, 2000) });
     this.lastToolCard = card;
     if (live) {
@@ -581,7 +580,7 @@ export class ChatView extends ItemView {
     if (!card) return;
     const status = card.querySelector(".ah-tool-status") as HTMLElement;
     if (status) {
-      status.setText(isError ? "失败/被拒绝" : "完成");
+      status.setText(isError ? t("toolFailed") : t("toolDone"));
       status.toggleClass("ah-err", !!isError);
     }
     if (text) card.createDiv({ cls: "ah-tool-result", text: text.slice(0, 300) });
@@ -598,7 +597,7 @@ export class ChatView extends ItemView {
     this.lastBubble = null;
     const el = this.messagesEl.createDiv({ cls: "ah-msg ah-error" });
     this.addMsgActions(el, text, false);
-    el.createDiv({ cls: "ah-role", text: "错误" });
+    el.createDiv({ cls: "ah-role", text: t("roleError") });
     el.createDiv({ cls: "ah-content", text });
     this.pushMsg({ role: "error", text, ts: Date.now() });
     this.scrollDown();

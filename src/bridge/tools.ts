@@ -1,5 +1,6 @@
 import { App, TFile, TFolder, normalizePath, requestUrl } from "obsidian";
 import { ToolDef, ToolTier } from "../types";
+import { t } from "../i18n";
 import {
   assertPublicUrl,
   htmlToText,
@@ -241,20 +242,20 @@ function clip(s: string, n = 400): string {
   return s.length > n ? s.slice(0, n) + `…（共 ${s.length} 字符）` : s;
 }
 
-/** 生成给用户看的操作摘要 */
+/** 生成给用户看的操作摘要（双语） */
 export function summarize(tool: string, args: Record<string, unknown>): string {
   const a = args as Record<string, string>;
   switch (tool) {
-    case "create_note": return `创建笔记 ${a.path}\n内容预览：\n${clip(a.content ?? "")}`;
-    case "update_note": return `完整替换笔记 ${a.path}\n新内容预览：\n${clip(a.content ?? "")}`;
-    case "append_note": return `向笔记 ${a.path} 追加内容：\n${clip(a.content ?? "")}`;
-    case "edit_note": return `修改笔记 ${a.path}\n原文：\n${clip(a.old_text ?? "", 200)}\n替换为：\n${clip(a.new_text ?? "", 200)}`;
-    case "rename_note": return `重命名/移动笔记：${a.path} → ${a.new_path}`;
-    case "create_folder": return `创建文件夹 ${a.path}`;
-    case "delete_note": return `删除笔记 ${a.path}（移入回收站）`;
-    case "web_search": return `联网搜索：${a.query}`;
-    case "fetch_webpage": return `抓取网页：${a.url}`;
-    case "add_image_to_note": return `向笔记 ${a.note_path} 插入网络图片\n图片 URL：${a.image_url}\n位置：${a.position === "prepend" ? "开头" : "末尾（默认）"}\n图片将下载到 vault 附件文件夹后以本地链接插入。`;
+    case "create_note": return t("sumCreate", { path: a.path, preview: clip(a.content ?? "") });
+    case "update_note": return t("sumUpdate", { path: a.path, preview: clip(a.content ?? "") });
+    case "append_note": return t("sumAppend", { path: a.path, preview: clip(a.content ?? "") });
+    case "edit_note": return t("sumEdit", { path: a.path, old: clip(a.old_text ?? "", 200), new: clip(a.new_text ?? "", 200) });
+    case "rename_note": return t("sumRename", { path: a.path, new: a.new_path });
+    case "create_folder": return t("sumFolder", { path: a.path });
+    case "delete_note": return t("sumDelete", { path: a.path });
+    case "web_search": return t("sumSearch", { q: a.query });
+    case "fetch_webpage": return t("sumFetch", { url: a.url });
+    case "add_image_to_note": return t("sumImage", { path: a.note_path, url: a.image_url, pos: a.position === "prepend" ? t("posPrepend") : t("posAppend") });
     default: return `${tool} ${JSON.stringify(args)}`;
   }
 }

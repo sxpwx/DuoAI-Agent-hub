@@ -3,6 +3,7 @@ import { AgentCredential, AgentSpec, CliAgentSpec, NativeAgentSpec } from "../ty
 import { checkLogin, startLogin, LoginProcess } from "../agents/auth";
 import { cosyDeviceLogin, cosyPatLogin, readClaudeLocalOAuth, readCosyCred } from "../agents/qwenwork-auth";
 import { fetchDynamicModels } from "../agents/models";
+import { t } from "../i18n";
 
 export interface LoginDeps {
   credentials: Record<string, AgentCredential>;
@@ -10,7 +11,7 @@ export interface LoginDeps {
 }
 
 /**
- * 应用内登录授权弹窗：
+ * 应用内登录授权弹窗（双语）：
  * - cosy 站点：设备流（浏览器授权 + 轮询），Qoder CN 另支持 PAT
  * - key/oauth：应用内填写凭据并验证
  * - cli（WorkBuddy）：自动启动 REPL /login 浏览器授权
@@ -36,8 +37,8 @@ export class LoginModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("ah-login-modal");
-    contentEl.createEl("h3", { text: `登录授权 · ${this.spec.label}` });
-    this.statusEl = contentEl.createEl("p", { cls: "ah-login-status", text: "准备中…" });
+    contentEl.createEl("h3", { text: t("loginTitle", { agent: this.spec.label }) });
+    this.statusEl = contentEl.createEl("p", { cls: "ah-login-status", text: "…" });
     this.logEl = contentEl.createEl("pre", { cls: "ah-login-log" });
 
     if (this.spec.kind === "native" && this.spec.protocol === "cosy") {
@@ -45,21 +46,18 @@ export class LoginModal extends Modal {
     } else if (this.spec.kind === "native") {
       this.buildCredForm(contentEl);
     } else {
-      contentEl.createEl("p", {
-        cls: "ah-confirm-hint",
-        text: "正在打开浏览器授权页，请在浏览器中完成登录授权，然后回到这里等待结果。无需操作终端。",
-      });
+      contentEl.createEl("p", { cls: "ah-confirm-hint", text: t("replHint") });
       this.beginRepl();
     }
 
     const btns = contentEl.createDiv({ cls: "ah-confirm-buttons" });
-    this.retryBtn = btns.createEl("button", { text: "重试" });
+    this.retryBtn = btns.createEl("button", { text: t("retry") });
     this.retryBtn.hide();
     this.retryBtn.addEventListener("click", () => {
       if (this.spec.kind === "native" && this.spec.protocol === "cosy") this.beginDevice();
       else if (this.spec.kind === "cli") this.beginRepl();
     });
-    const cancel = btns.createEl("button", { text: "取消" });
+    const cancel = btns.createEl("button", { text: t("cancel") });
     cancel.addEventListener("click", () => this.close());
   }
 
@@ -71,28 +69,25 @@ export class LoginModal extends Modal {
   // ---- cosy 设备流 ----
   private buildDeviceFlow(contentEl: HTMLElement) {
     const spec = this.spec as NativeAgentSpec;
-    contentEl.createEl("p", {
-      cls: "ah-confirm-hint",
-      text: `点击开始后浏览器打开${spec.label}登录页（与桌面端同账号），授权完成自动回到这里。`,
-    });
-    const start = contentEl.createEl("button", { text: "打开浏览器授权", cls: "mod-cta" });
+    contentEl.createEl("p", { cls: "ah-confirm-hint", text: t("deviceHint", { agent: spec.label }) });
+    const start = contentEl.createEl("button", { text: t("openBrowser"), cls: "mod-cta" });
     start.addEventListener("click", () => this.beginDevice());
     if (spec.cred === "device+pat") {
       const box = contentEl.createDiv({ cls: "ah-login-pat" });
-      box.createEl("p", { cls: "ah-confirm-hint", text: "或粘贴 Personal Access Token（qoder.com.cn 账号页生成）：" });
+      box.createEl("p", { cls: "ah-confirm-hint", text: t("patHint") });
       const row = box.createDiv({ cls: "ah-login-pat-row" });
       const input = row.createEl("input", { type: "password", placeholder: "pt-…" });
-      const save = row.createEl("button", { text: "验证并保存" });
+      const save = row.createEl("button", { text: t("verifySave") });
       save.addEventListener("click", async () => {
         const pat = input.value.trim();
-        if (!pat) return new Notice("请先粘贴 PAT");
-        save.setText("验证中…");
+        if (!pat) return new Notice(t("pastePatFirst"));
+        save.setText(t("verifying"));
         try {
           await cosyPatLogin(spec.site!, pat);
           this.succeed();
         } catch (e: any) {
           this.statusEl.setText(String(e?.message ?? e));
-          save.setText("验证并保存");
+          save.setText(t("verifySave"));
         }
       });
     }
@@ -103,14 +98,14 @@ export class LoginModal extends Modal {
     const spec = this.spec as NativeAgentSpec;
     this.settled = false;
     this.retryBtn.hide();
-    this.statusEl.setText("正在打开登录页…");
+    this.statusEl.setText(t("openingLogin"));
     try {
       await cosyDeviceLogin(
         spec.site!,
         (url) => {
           this.log(url);
           window.open(url, "_blank");
-          this.statusEl.setText("浏览器已打开授权页，请完成登录授权…");
+          this.statusEl.setText(t("browserOpened"));
         },
         () => this.settled
       );
@@ -126,48 +121,47 @@ export class LoginModal extends Modal {
   private buildCredForm(contentEl: HTMLElement) {
     const spec = this.spec as NativeAgentSpec;
     const cur = this.deps.credentials[spec.id] ?? {};
-    contentEl.createEl("p", { cls: "ah-confirm-hint", text: spec.loginHint ?? "填写凭据后验证保存。" });
+    contentEl.createEl("p", { cls: "ah-confirm-hint", text: t(`agent.${spec.id}.hint`) || t("credHintDefault") });
     const form = contentEl.createDiv({ cls: "ah-login-pat" });
     let baseInput: HTMLInputElement | null = null;
     if (spec.protocol === "openai-compat") {
       const r = form.createDiv({ cls: "ah-login-pat-row" });
-      r.createSpan({ text: "Base URL" });
+      r.createSpan({ text: t("baseUrl") });
       baseInput = r.createEl("input", { type: "text", placeholder: spec.baseUrl ?? "https://…/v1" });
       baseInput.value = cur.baseUrl ?? spec.baseUrl ?? "";
     }
     const r1 = form.createDiv({ cls: "ah-login-pat-row" });
-    r1.createSpan({ text: "API Key" });
+    r1.createSpan({ text: t("apiKey") });
     const keyInput = r1.createEl("input", { type: "password", placeholder: "sk-…" });
     keyInput.value = cur.apiKey ?? "";
-    let oauthBtn: HTMLButtonElement | null = null;
     if (spec.cred === "key+oauth") {
       const r2 = form.createDiv({ cls: "ah-login-pat-row" });
-      oauthBtn = r2.createEl("button", { text: "读取本机 Claude Code 登录态" });
+      const oauthBtn = r2.createEl("button", { text: t("readLocalClaude") });
       oauthBtn.addEventListener("click", async () => {
-        const t = readClaudeLocalOAuth();
-        if (!t) {
-          this.statusEl.setText("本机无 Claude Code 登录态（~/.claude/.credentials.json 不存在）。请填 API Key。");
+        const tk = readClaudeLocalOAuth();
+        if (!tk) {
+          this.statusEl.setText(t("noLocalClaude"));
           return;
         }
-        await this.deps.saveCredential(spec.id, { ...cur, oauthToken: t });
-        this.statusEl.setText("已读取本机 OAuth 登录态，验证中…");
-        await this.verify(spec, { ...cur, oauthToken: t });
+        await this.deps.saveCredential(spec.id, { ...cur, oauthToken: tk });
+        this.statusEl.setText(t("oauthReadOk"));
+        await this.verify(spec, { ...cur, oauthToken: tk });
       });
     }
-    const save = form.createEl("button", { text: "验证并保存", cls: "mod-cta" });
+    const save = form.createEl("button", { text: t("verifySave"), cls: "mod-cta" });
     save.addEventListener("click", async () => {
       const cred: AgentCredential = {
         ...cur,
         apiKey: keyInput.value.trim(),
         ...(baseInput ? { baseUrl: baseInput.value.trim() } : {}),
       };
-      if (!cred.apiKey && !cred.oauthToken) return new Notice("请填写 API Key 或读取本机登录态");
-      save.setText("验证中…");
+      if (!cred.apiKey && !cred.oauthToken) return new Notice(t("fillKeyOrOauth"));
+      save.setText(t("verifying"));
       await this.deps.saveCredential(spec.id, cred);
       await this.verify(spec, cred);
-      save.setText("验证并保存");
+      save.setText(t("verifySave"));
     });
-    this.statusEl.setText("填写凭据后点击验证。");
+    this.statusEl.setText(t("credHintDefault"));
   }
 
   private async verify(spec: NativeAgentSpec, cred: AgentCredential) {
@@ -176,7 +170,7 @@ export class LoginModal extends Modal {
     if (models.length || spec.protocol === "openai-compat") {
       this.succeed();
     } else {
-      this.statusEl.setText("验证未通过：请检查凭据/网络（模型目录为空）。");
+      this.statusEl.setText(t("verifyFail"));
     }
   }
 
@@ -186,13 +180,13 @@ export class LoginModal extends Modal {
     this.proc?.kill();
     this.settled = false;
     this.retryBtn.hide();
-    this.statusEl.setText("正在启动登录流程…");
+    this.statusEl.setText(t("openingLogin"));
     this.proc = startLogin(spec, this.exe!, (line) => {
       this.log(line);
-      if (/https?:\/\//.test(line)) this.statusEl.setText("浏览器授权页已打开，等待授权完成…");
+      if (/https?:\/\//.test(line)) this.statusEl.setText(t("browserOpened"));
     });
     if (!this.proc) {
-      this.statusEl.setText("无法启动登录命令，请在设置中检查 CLI 路径或先安装。");
+      this.statusEl.setText(t("cannotStartLogin"));
       return;
     }
     this.proc.done.then(async ({ code, output }) => {
@@ -200,7 +194,7 @@ export class LoginModal extends Modal {
       const ok = await checkLogin(spec, this.exe!);
       if (ok === true) return this.succeed();
       if (code !== 0 && code !== null) {
-        this.statusEl.setText(`登录命令退出（code=${code}）。可重试。`);
+        this.statusEl.setText(t("loginCmdExit", { code }));
         this.log(output.split(/\r?\n/).slice(-4).join("\n"));
         this.retryBtn.show();
       }
@@ -224,7 +218,7 @@ export class LoginModal extends Modal {
     if (this.settled) return;
     this.settled = true;
     this.proc?.kill();
-    new Notice(`${this.spec.label} 登录/凭据配置成功`);
+    new Notice(t("loginSuccess", { agent: this.spec.label }));
     this.onSuccess();
     this.close();
   }

@@ -1,5 +1,6 @@
 import { RunContext } from "../types";
 import { TOOL_DEFS } from "../bridge/tools";
+import { t } from "../i18n";
 
 type ExecFn = (name: string, args: Record<string, unknown>) => Promise<string>;
 
@@ -31,7 +32,7 @@ export async function runAnthropicLoop(
   networkEnabled = true
 ): Promise<void> {
   if (!auth.apiKey && !auth.oauthToken) {
-    ctx.onEvent({ type: "error", text: "请先在设置中填入 Anthropic API Key，或读取本机 Claude Code 登录态。" });
+    ctx.onEvent({ type: "error", text: t("fillAnthropic") });
     return;
   }
   const tools = TOOL_DEFS.filter((t) => !t.network || networkEnabled).map((t) => ({
@@ -44,7 +45,7 @@ export async function runAnthropicLoop(
 
   for (let iter = 1; ; iter++) {
     if (ctx.signal.aborted) return;
-    ctx.onEvent({ type: "status", text: `请求 Claude（第 ${iter} 轮）…` });
+    ctx.onEvent({ type: "status", text: t("statusRequestClaude", { n: iter }) });
     let res: Response;
     try {
       res = await fetch(endpoint, {

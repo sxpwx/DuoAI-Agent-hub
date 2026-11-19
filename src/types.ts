@@ -79,7 +79,6 @@ export interface CliAgentSpec {
   kind: "cli";
   id: string;
   label: string;
-  description: string;
   protocol: "claude" | "codex" | "opencode" | "qwenwork";
   /** PATH 中候选命令名 */
   commands: string[];
@@ -88,7 +87,6 @@ export interface CliAgentSpec {
   models: string[];
   dynamicModels?: (exe: string) => Promise<string[]>;
   installHint: string;
-  loginHint?: string;
   login?: CliLoginSpec;
   buildArgs: (exe: string, ctx: RunContext) => string[];
   /** stdin 发送 stream-json 消息（true）还是纯文本（false） */
@@ -97,22 +95,11 @@ export interface CliAgentSpec {
   fallbackArgs?: (exe: string, ctx: RunContext) => string[];
 }
 
-export interface ApiAgentSpec {
-  kind: "api";
-  id: string;
-  label: string;
-  description: string;
-  defaultBaseUrl: string;
-  models: string[];
-  installHint: string;
-}
-
 /** 内置协议 agent：无需外部 CLI，插件内直接完成鉴权与模型调用 */
 export interface NativeAgentSpec {
   kind: "native";
   id: string;
   label: string;
-  description: string;
   protocol: "cosy" | "anthropic" | "openai" | "openai-compat";
   /** cosy 站点 id（qwenwork / qoder-cn） */
   site?: string;
@@ -121,10 +108,9 @@ export interface NativeAgentSpec {
   baseUrl?: string;
   models: string[];
   dynamic?: "cosy" | "anthropic" | "openai";
-  loginHint?: string;
 }
 
-export type AgentSpec = CliAgentSpec | ApiAgentSpec | NativeAgentSpec;
+export type AgentSpec = CliAgentSpec | NativeAgentSpec;
 
 export interface AgentCredential {
   apiKey?: string;
@@ -162,6 +148,7 @@ export interface Conversation {
 export interface AgentHubSettings {
   permissionMode: PermissionMode;
   networkTools: boolean;
+  language: "auto" | "zh" | "en";
   confirmTimeoutSec: number;
   selectedAgent: string;
   selectedModels: Record<string, string>;
@@ -172,6 +159,7 @@ export interface AgentHubSettings {
 export const DEFAULT_SETTINGS: AgentHubSettings = {
   permissionMode: "confirm",
   networkTools: true,
+  language: "auto",
   confirmTimeoutSec: 180,
   selectedAgent: "qwenwork",
   selectedModels: {},
