@@ -3,6 +3,7 @@ import { TOOL_DEFS } from "../bridge/tools";
 import { cosyChat, CosyCred } from "./qwenwork-chat";
 import { t } from "../i18n";
 import { arr, num, rec, str } from "./guards";
+import { streamSSE } from "./http-stream";
 
 type ExecFn = (name: string, args: Record<string, unknown>) => Promise<string>;
 
@@ -124,69 +125,49 @@ export async function runApiLoop(
   for (let iter = 1; ; iter++) {
     if (ctx.signal.aborted) return;
     ctx.onEvent({ type: "status", text: t("statusRequestRound", { n: iter }) });
-    let res: Response;
-    try {
-      res = await fetch(endpoint, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: cfg.model, messages, tools, stream: true }),
-        signal: ctx.signal,
-      });
-    } catch (e) {
-      if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `网络请求失败：${rec(e).message ?? e}` });
-      return;
-    }
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => "");
-      ctx.onEvent({ type: "error", text: `API 错误 ${res.status}：${text.slice(0, 500)}` });
-      return;
-    }
 
     let content = "";
     const calls: { id: string; name: string; args: string }[] = [];
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf("\n")) >= 0) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          if (payload === "[DONE]") continue;
-          let obj: unknown;
-          try {
-            obj = JSON.parse(payload);
-          } catch {
-            continue;
-          }
-          const choiceRaw = arr(rec(obj).choices)[0];
-          if (!choiceRaw) continue;
-          const delta = rec(rec(choiceRaw).delta);
-          if (delta.content) {
-            content += str(delta.content);
-            ctx.onEvent({ type: "text", text: str(delta.content) });
-          }
-          for (const tcRaw of arr(delta.tool_calls)) {
-            const tc = rec(tcRaw);
-            const fn = rec(tc.function);
-            const i = num(tc.index);
-            if (!calls[i]) calls[i] = { id: typeof tc.id === "string" ? tc.id : `call_${i}`, name: "", args: "" };
-            if (tc.id) calls[i].id = str(tc.id);
-            if (fn.name) calls[i].name += str(fn.name);
-            if (fn.arguments) calls[i].args += str(fn.arguments);
-          }
+      const stream = streamSSE(
+        endpoint,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: cfg.model, messages, tools, stream: true }),
+        },
+        ctx.signal
+      );
+      for await (const payload of stream) {
+        if (ctx.signal.aborted) return;
+        if (payload === "[DONE]") continue;
+        let obj: unknown;
+        try {
+          obj = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        const choiceRaw = arr(rec(obj).choices)[0];
+        if (!choiceRaw) continue;
+        const delta = rec(rec(choiceRaw).delta);
+        if (delta.content) {
+          content += str(delta.content);
+          ctx.onEvent({ type: "text", text: str(delta.content) });
+        }
+        for (const tcRaw of arr(delta.tool_calls)) {
+          const tc = rec(tcRaw);
+          const fn = rec(tc.function);
+          const i = num(tc.index);
+          if (!calls[i]) calls[i] = { id: typeof tc.id === "string" ? tc.id : `call_${i}`, name: "", args: "" };
+          if (tc.id) calls[i].id = str(tc.id);
+          if (fn.name) calls[i].name += str(fn.name);
+          if (fn.arguments) calls[i].args += str(fn.arguments);
         }
       }
     } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `流读取中断：${rec(e).message ?? e}` });
+      const msg = String(rec(e).message ?? e);
+      ctx.onEvent({ type: "error", text: msg.startsWith("HTTP") ? `API 错误 ${msg}` : `网络请求失败：${msg}` });
       return;
     }
     if (await execCalls(calls, messages, content, ctx, execute)) continue;

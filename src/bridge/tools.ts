@@ -230,7 +230,7 @@ export function safePath(raw: unknown, opts: { write?: boolean } = {}): string {
   if (/^[a-zA-Z]:/.test(p) || p.startsWith("/")) throw new Error("只允许 vault 相对路径");
   p = normalizePath(p);
   if (p.split("/").some((seg) => seg === ".." || seg.startsWith("."))) {
-    throw new Error("禁止访问隐藏目录或上级目录（.obsidian / .trash / .. 等）");
+    throw new Error("禁止访问隐藏目录或上级目录（隐藏配置目录 / .trash / .. 等）");
   }
   if (opts.write && !/\.(md|canvas)$/i.test(p)) {
     throw new Error("写入仅支持 .md / .canvas 文件");
@@ -417,7 +417,7 @@ export class VaultTools {
           imgPath = normalizePath(folder ? `${folder}/${name}` : name);
         }
         await this.app.vault.createBinary(imgPath, buf);
-        const alt = String(args.alt ?? "").replace(/[\[\]]/g, "");
+        const alt = String(args.alt ?? "").replace(/[[\]]/g, "");
         const link = `![${alt}](${encodeURI(imgPath)})`;
         const old = await this.app.vault.cachedRead(f);
         const content = args.position === "prepend" ? link + "\n\n" + old : old + (old.endsWith("\n") || !old ? "" : "\n") + "\n" + link;

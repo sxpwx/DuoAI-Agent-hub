@@ -1,12 +1,13 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { AgentSpec, CliAgentSpec, NativeAgentSpec, RunContext } from "../types";
-import { detectQwenworkCli, isGuiExe, whichSync } from "./detect";
+import { AgentSpec, CliAgentSpec, NativeAgentSpec } from "../types";
+import { isGuiExe, whichSync } from "./detect";
 import { COSY_SITES } from "./qwenwork-chat";
 import { getLang, t } from "../i18n";
+import { rec } from "./guards";
 
-const MODEL_RE = /^[\w.\-\/]+$/;
+const MODEL_RE = /^[\w.\-/]+$/;
 
 function modelArgs(flag: string, model: string): string[] {
   return model && model !== "default" && MODEL_RE.test(model) ? [flag, model] : [];
@@ -86,8 +87,8 @@ const workbuddy: CliAgentSpec = {
     parse: (out) => {
       if (/authentication required|not logged in|please use \/login|login required/i.test(out)) return false;
       try {
-        const j = JSON.parse(out);
-        if (j && (j.result !== undefined || j.type === "result")) return !j.is_error;
+        const j = rec(JSON.parse(out));
+        if (j.result !== undefined || j.type === "result") return !j.is_error;
         return null;
       } catch {
         return null;
@@ -169,7 +170,7 @@ export function buildSystemPrompt(vaultName: string): string {
       `You are the operation assistant for the Obsidian vault "${vaultName}".`,
       "You can only read and modify this vault through the obsidian tools; you have no other tools (no shell, no direct filesystem access).",
       "Rules:",
-      "1. Use vault-relative paths (e.g. notes/idea.md); never absolute paths; never hidden dirs like .obsidian.",
+      "1. Use vault-relative paths (e.g. notes/idea.md); never absolute paths; never hidden directories such as the vault config directory.",
       "2. Read a note before modifying it; prefer edit_note for precise changes over whole-file replacement.",
       "3. Writes/deletes raise a confirmation dialog for the user; if denied, adjust your plan or ask — do not retry the same action repeatedly.",
       "4. Do not attempt to run commands or touch local content outside the vault.",
@@ -181,7 +182,7 @@ export function buildSystemPrompt(vaultName: string): string {
     `你是 Obsidian 笔记库「${vaultName}」的操作助手。`,
     "你只能通过 obsidian 工具读取和修改这个笔记库，没有任何其他工具（无 shell、无直接文件系统访问）。",
     "规则：",
-    "1. 所有路径使用 vault 相对路径（如 notes/idea.md），不要使用绝对路径，不要访问 .obsidian 等隐藏目录。",
+    "1. 所有路径使用 vault 相对路径（如 notes/idea.md），不要使用绝对路径，不要访问隐藏配置目录等隐藏目录。",
     "2. 修改前先 read_note 了解现状；精确修改优先用 edit_note，避免整篇覆盖。",
     "3. 写入/删除操作会弹出确认框由用户批准；被拒绝时调整方案或询问用户，不要反复重试同一操作。",
     "4. 不要尝试执行命令或操作笔记库以外的本地内容。",

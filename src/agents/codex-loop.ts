@@ -2,6 +2,7 @@ import { RunContext } from "../types";
 import { TOOL_DEFS } from "../bridge/tools";
 import { t } from "../i18n";
 import { rec, str } from "./guards";
+import { streamSSE } from "./http-stream";
 
 type ExecFn = (name: string, args: Record<string, unknown>) => Promise<string>;
 
@@ -55,96 +56,79 @@ export async function runCodexOAuthLoop(
   let token = accessToken;
   const sessionId = crypto.randomUUID();
 
+  let refreshed = false;
   for (let iter = 1; ; iter++) {
     if (ctx.signal.aborted) return;
     ctx.onEvent({ type: "status", text: t("statusRequestRound", { n: iter }) });
-    let res: Response;
-    try {
-      res = await fetch(ENDPOINT, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-          "OpenAI-Beta": "responses=experimental",
-          originator: "codex_cli_rs",
-          session_id: sessionId,
-        },
-        body: JSON.stringify({
-          model: ctx.model,
-          instructions: ctx.systemPrompt,
-          input: toInput(messages),
-          tools,
-          stream: true,
-          store: false,
-        }),
-        signal: ctx.signal,
-      });
-    } catch (e) {
-      if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `Network / 网络: ${rec(e).message ?? e}` });
-      return;
-    }
-    if (res.status === 401 && onRefresh) {
-      const nt = await onRefresh();
-      if (nt) {
-        token = nt;
-        continue;
-      }
-    }
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => "");
-      ctx.onEvent({ type: "error", text: `Codex API ${res.status}: ${text.slice(0, 400)}` });
-      return;
-    }
 
     let content = "";
     let completed = false;
     const calls = new Map<string, { call_id: string; name: string; args: string }>();
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf("\n")) >= 0) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
-          if (!line.startsWith("data:")) continue;
-          let ev: unknown;
-          try {
-            ev = JSON.parse(line.slice(5).trim());
-          } catch {
-            continue;
-          }
-          const e = rec(ev);
-          const et = str(e.type);
-          const item = rec(e.item);
-          if (et === "response.output_text.delta") {
-            content += str(e.delta);
-            ctx.onEvent({ type: "text", text: str(e.delta) });
-          } else if (et === "response.output_item.added" && item.type === "function_call") {
-            calls.set(str(item.id ?? item.call_id), { call_id: str(item.call_id), name: str(item.name), args: "" });
-          } else if (et === "response.function_call_arguments.delta") {
-            const c = calls.get(str(e.item_id));
-            if (c) c.args += str(e.delta);
-          } else if (et === "response.output_item.done" && item.type === "function_call") {
-            const c = calls.get(str(item.id ?? item.call_id));
-            if (c && item.arguments) c.args = str(item.arguments);
-          } else if (et === "response.completed") {
-            completed = true;
-          } else if (et === "response.failed" || et === "error") {
-            ctx.onEvent({ type: "error", text: String(rec(e.error).message ?? e.message ?? "Codex stream error") });
-            return;
-          }
+      const stream = streamSSE(
+        ENDPOINT,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            "OpenAI-Beta": "responses=experimental",
+            originator: "codex_cli_rs",
+            session_id: sessionId,
+          },
+          body: JSON.stringify({
+            model: ctx.model,
+            instructions: ctx.systemPrompt,
+            input: toInput(messages),
+            tools,
+            stream: true,
+            store: false,
+          }),
+        },
+        ctx.signal
+      );
+      for await (const payload of stream) {
+        if (ctx.signal.aborted) return;
+        let ev: unknown;
+        try {
+          ev = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        const e = rec(ev);
+        const et = str(e.type);
+        const item = rec(e.item);
+        if (et === "response.output_text.delta") {
+          content += str(e.delta);
+          ctx.onEvent({ type: "text", text: str(e.delta) });
+        } else if (et === "response.output_item.added" && item.type === "function_call") {
+          calls.set(str(item.id ?? item.call_id), { call_id: str(item.call_id), name: str(item.name), args: "" });
+        } else if (et === "response.function_call_arguments.delta") {
+          const c = calls.get(str(e.item_id));
+          if (c) c.args += str(e.delta);
+        } else if (et === "response.output_item.done" && item.type === "function_call") {
+          const c = calls.get(str(item.id ?? item.call_id));
+          if (c && item.arguments) c.args = str(item.arguments);
+        } else if (et === "response.completed") {
+          completed = true;
+        } else if (et === "response.failed" || et === "error") {
+          ctx.onEvent({ type: "error", text: String(rec(e.error).message ?? e.message ?? "Codex stream error") });
+          return;
         }
       }
     } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `Stream / 流: ${rec(e).message ?? e}` });
+      const msg = String(rec(e).message ?? e);
+      if (msg.includes("401") && onRefresh && !refreshed) {
+        const nt = await onRefresh();
+        if (nt) {
+          token = nt;
+          refreshed = true;
+          continue;
+        }
+      }
+      ctx.onEvent({ type: "error", text: msg.startsWith("HTTP") ? `Codex API ${msg}` : `Network / 网络: ${msg}` });
       return;
     }
 

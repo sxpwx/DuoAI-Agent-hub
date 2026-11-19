@@ -382,7 +382,7 @@ function httpsRequest(url: string, method: string, headers: Record<string, strin
 function readAll(res: import("http").IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let s = "";
-    res.on("data", (d) => (s += d.toString()));
+    res.on("data", (d: Buffer) => (s += d.toString()));
     res.on("end", () => resolve(s));
     res.on("error", reject);
   });

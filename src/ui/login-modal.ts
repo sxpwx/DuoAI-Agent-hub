@@ -50,7 +50,7 @@ export class LoginModal extends Modal {
       this.buildCredForm(contentEl);
     } else {
       contentEl.createEl("p", { cls: "ah-confirm-hint", text: t("replHint") });
-      if ((this.spec as CliAgentSpec).login?.custom === "codebuddy-daemon") this.beginCodebuddy();
+      if (this.spec.login?.custom === "codebuddy-daemon") void this.beginCodebuddy();
       else this.beginRepl();
     }
 
@@ -59,7 +59,7 @@ export class LoginModal extends Modal {
     this.retryBtn.hide();
     this.retryBtn.addEventListener("click", () => {
       if (this.spec.kind === "native" && this.spec.protocol === "cosy") void this.beginDevice();
-      else if (this.spec.kind === "cli" && (this.spec as CliAgentSpec).login?.custom === "codebuddy-daemon") void this.beginCodebuddy();
+      else if (this.spec.kind === "cli" && this.spec.login?.custom === "codebuddy-daemon") void this.beginCodebuddy();
       else if (this.spec.kind === "cli") this.beginRepl();
     });
     const cancel = btns.createEl("button", { text: t("cancel") });
@@ -98,7 +98,7 @@ export class LoginModal extends Modal {
         })();
       });
     }
-    this.beginDevice();
+    void this.beginDevice();
   }
 
   private async beginDevice() {
@@ -264,28 +264,32 @@ export class LoginModal extends Modal {
       this.statusEl.setText(t("cannotStartLogin"));
       return;
     }
-    this.proc.done.then(async ({ code, output }) => {
-      if (this.settled) return;
-      const ok = await checkLogin(spec, this.exe!);
-      if (ok === true) return this.succeed();
-      if (code !== 0 && code !== null) {
-        this.statusEl.setText(t("loginCmdExit", { code }));
-        this.log(output.split(/\r?\n/).slice(-4).join("\n"));
-        this.retryBtn.show();
-      }
-    });
+    void this.proc.done
+      .then(async ({ code, output }) => {
+        if (this.settled) return;
+        const ok = await checkLogin(spec, this.exe!);
+        if (ok === true) return this.succeed();
+        if (code !== 0 && code !== null) {
+          this.statusEl.setText(t("loginCmdExit", { code }));
+          this.log(output.split(/\r?\n/).slice(-4).join("\n"));
+          this.retryBtn.show();
+        }
+      })
+      .catch(() => {});
     this.pollRepl();
   }
 
   private pollRepl() {
     const spec = this.spec as CliAgentSpec;
     if (this.pollTimer !== null) window.clearTimeout(this.pollTimer);
-    this.pollTimer = window.setTimeout(async () => {
-      if (this.settled) return;
-      const ok = await checkLogin(spec, this.exe!);
-      if (this.settled) return;
-      if (ok === true) return this.succeed();
-      this.pollRepl();
+    this.pollTimer = window.setTimeout(() => {
+      void (async () => {
+        if (this.settled) return;
+        const ok = await checkLogin(spec, this.exe!);
+        if (this.settled) return;
+        if (ok === true) return this.succeed();
+        this.pollRepl();
+      })();
     }, 3000);
   }
 

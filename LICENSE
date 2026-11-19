@@ -19,15 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Third-party notices:
-
-The COSY protocol implementation (device sign-in flow, request signing, body
-codec and SSE parsing) in src/agents/qwenwork-chat.ts and
-src/agents/qwenwork-auth.ts is ported from the MIT-licensed community project
-@magpie-community/opencode-qoder-auth (https://github.com/magpie-community/plugins),
-which itself derives from CLIProxyAPI (MIT). Original copyright notices of
-those projects apply to the ported portions. Reference copies are kept under
-vendor/qwenwork-auth/ with their licenses.

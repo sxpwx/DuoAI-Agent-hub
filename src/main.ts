@@ -1,6 +1,6 @@
 import { FileSystemAdapter, Notice, Plugin, WorkspaceLeaf } from "obsidian";
 import * as path from "path";
-import { AgentEvent, AgentHubSettings, Conversation, DEFAULT_SETTINGS, RunContext } from "./types";
+import { AgentCredential, AgentEvent, AgentHubSettings, Conversation, DEFAULT_SETTINGS, RunContext } from "./types";
 import { VaultTools } from "./bridge/tools";
 import { BridgeServer } from "./bridge/server";
 import { AGENTS, buildSystemPrompt, detectCli, getAgent } from "./agents/registry";
@@ -80,22 +80,35 @@ export default class AgentHubPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const loaded = (await this.loadData()) ?? {};
-    const credentials = { ...(loaded.credentials ?? {}) };
-    // 迁移旧版 api / pat 配置
-    for (const [id, cfg] of Object.entries(loaded.api ?? {})) {
-      const c = cfg as { baseUrl?: string; apiKey?: string };
-      if (c?.apiKey || c?.baseUrl) credentials[id] = { ...credentials[id], apiKey: c.apiKey, baseUrl: c.baseUrl };
+    const loaded = rec((await this.loadData()) as unknown);
+    const credentials: Record<string, AgentCredential> = {};
+    for (const [id, c] of Object.entries(rec(loaded.credentials))) {
+      credentials[id] = { ...rec(c) } as AgentCredential;
     }
-    for (const [id, pat] of Object.entries(loaded.pat ?? {})) {
-      if (pat) credentials[id] = { ...credentials[id], pat: pat as string };
+    // 迁移旧版 api / pat 配置
+    for (const [id, cfg] of Object.entries(rec(loaded.api))) {
+      const c = rec(cfg);
+      const apiKey = typeof c.apiKey === "string" ? c.apiKey : undefined;
+      const baseUrl = typeof c.baseUrl === "string" ? c.baseUrl : undefined;
+      if (apiKey || baseUrl) credentials[id] = { ...credentials[id], apiKey, baseUrl };
+    }
+    for (const [id, pat] of Object.entries(rec(loaded.pat))) {
+      if (typeof pat === "string" && pat) credentials[id] = { ...credentials[id], pat };
+    }
+    const selectedModels: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rec(loaded.selectedModels))) {
+      if (typeof v === "string") selectedModels[k] = v;
+    }
+    const cliPaths: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rec(loaded.cliPaths))) {
+      if (typeof v === "string") cliPaths[k] = v;
     }
     this.settings = {
       ...DEFAULT_SETTINGS,
-      ...loaded,
+      ...(loaded as Partial<AgentHubSettings>),
       credentials,
-      selectedModels: { ...(loaded.selectedModels ?? {}) },
-      cliPaths: { ...(loaded.cliPaths ?? {}) },
+      selectedModels,
+      cliPaths,
     };
     Reflect.deleteProperty(this.settings, "api");
     Reflect.deleteProperty(this.settings, "pat");
@@ -115,7 +128,7 @@ export default class AgentHubPlugin extends Plugin {
       leaf = this.app.workspace.getRightLeaf(false);
       await leaf?.setViewState({ type: VIEW_TYPE, active: true });
     }
-    if (leaf) this.app.workspace.revealLeaf(leaf);
+    if (leaf) void this.app.workspace.revealLeaf(leaf);
   }
 
   getVaultPath(): string {

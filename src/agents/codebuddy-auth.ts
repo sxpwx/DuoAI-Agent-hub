@@ -1,7 +1,8 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { spawn, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
+import { requestUrl } from "obsidian";
 import { resolveCli, whichSync } from "./detect";
 import { rec, str } from "./guards";
 
@@ -89,8 +90,8 @@ export async function codebuddyAuthStatus(): Promise<boolean | null> {
   }
   if (!endpoint) return false;
   try {
-    const r = await fetch(endpoint + "/api/v1/auth/account/status", { headers: headers(pw), signal: AbortSignal.timeout(8000) });
-    const j = rec(await r.json());
+    const r = await requestUrl({ url: endpoint + "/api/v1/auth/account/status", headers: headers(pw), throw: false });
+    const j = rec(r.json);
     const d = rec(j.data);
     if (d.authenticated === true) return true;
     if (d.authenticated === false) return false;
@@ -106,15 +107,21 @@ export async function codebuddyStartLogin(method = "internal"): Promise<string> 
   if (!endpoint) throw new Error("无法启动 codebuddy 守护进程 / cannot start codebuddy daemon");
   const pw = gatewayPassword();
   if (!pw) throw new Error("缺少守护进程凭据（settings.json gateway.password）/ missing daemon gateway password");
-  const r = await fetch(endpoint + "/api/v1/auth/account/login", {
+  const r = await requestUrl({
+    url: endpoint + "/api/v1/auth/account/login",
     method: "POST",
     headers: headers(pw),
     body: JSON.stringify({ method }),
-    signal: AbortSignal.timeout(30000),
+    throw: false,
   });
-  const j = rec(await r.json().catch(() => ({})));
+  let j: Record<string, unknown> = {};
+  try {
+    j = rec(JSON.parse(r.text));
+  } catch {
+    /* 非 JSON 响应 */
+  }
   const d = rec(j.data ?? j);
-  if (!r.ok || d.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
+  if (r.status < 200 || r.status >= 300 || d.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
   if (!d.authUrl) throw new Error("守护进程未返回授权 URL / daemon returned no authUrl");
   return str(d.authUrl);
 }
@@ -130,23 +137,29 @@ export async function codebuddyLogin(
   if (!endpoint) throw new Error("无法启动 codebuddy 守护进程 / cannot start codebuddy daemon");
   const pw = gatewayPassword();
   if (!pw) throw new Error("缺少守护进程凭据（settings.json gateway.password）/ missing daemon gateway password");
-  const r = await fetch(endpoint + "/api/v1/auth/account/login", {
+  const r = await requestUrl({
+    url: endpoint + "/api/v1/auth/account/login",
     method: "POST",
     headers: headers(pw),
     body: JSON.stringify({ method }),
-    signal: AbortSignal.timeout(30000),
+    throw: false,
   });
-  const j = rec(await r.json().catch(() => ({})));
+  let j: Record<string, unknown> = {};
+  try {
+    j = rec(JSON.parse(r.text));
+  } catch {
+    /* 非 JSON 响应 */
+  }
   const d = rec(j.data ?? j);
-  if (!r.ok || d.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
+  if (r.status < 200 || r.status >= 300 || d.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
   if (d.authUrl) onUrl(str(d.authUrl));
   const until = Date.now() + timeoutMs;
   while (Date.now() < until) {
     if (isCancelled()) throw new Error("cancelled");
     await new Promise((res) => window.setTimeout(res, 2000));
     try {
-      const s = await fetch(endpoint + "/api/v1/auth/account/status", { headers: headers(pw), signal: AbortSignal.timeout(8000) });
-      const sj = rec(await s.json());
+      const s = await requestUrl({ url: endpoint + "/api/v1/auth/account/status", headers: headers(pw), throw: false });
+      const sj = rec(s.json);
       const sd = rec(sj.data);
       if (sd.authenticated === true) return;
       if (typeof sd.loginError === "string" && sd.loginError) throw new Error(sd.loginError);

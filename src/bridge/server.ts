@@ -1,5 +1,4 @@
 import * as http from "http";
-import { AddressInfo } from "net";
 import * as crypto from "crypto";
 import { ConfirmHandler, PermissionMode } from "../types";
 import { TOOL_DEFS, VaultTools, summarize } from "./tools";
@@ -38,12 +37,15 @@ export class BridgeServer {
 
   async start(): Promise<void> {
     if (this.server) return;
-    this.server = http.createServer((req, res) => this.handle(req, res));
+    this.server = http.createServer((req, res) => {
+      void this.handle(req, res);
+    });
     await new Promise<void>((resolve, reject) => {
       this.server!.once("error", reject);
       this.server!.listen(0, "127.0.0.1", () => resolve());
     });
-    this.port = (this.server!.address() as AddressInfo).port;
+    const addr = this.server!.address();
+    this.port = addr && typeof addr === "object" ? addr.port : 0;
   }
 
   stop() {

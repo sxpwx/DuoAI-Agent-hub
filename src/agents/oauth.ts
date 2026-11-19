@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 import * as http from "http";
-import { AddressInfo } from "net";
+import { requestUrl } from "obsidian";
 import { rec, str } from "./guards";
 
 /**
@@ -47,6 +47,11 @@ export interface OAuthTokens {
 
 const b64url = (b: Buffer) => b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
+function serverPort(s: http.Server | null): number {
+  const a = s?.address();
+  return a && typeof a === "object" ? a.port : 0;
+}
+
 /** 启动授权：打开浏览器并等待本地回调，返回令牌 */
 export function oauthAuthorize(
   providerId: string,
@@ -87,14 +92,14 @@ export function oauthAuthorize(
       res.end("<html><body><h3>Authorization received / 已收到授权</h3><p>You can close this tab and return to Obsidian. / 可关闭此页返回 Obsidian。</p></body></html>");
       if (err) return finish(new Error(`OAuth error: ${err}`));
       if (!code || st !== state) return finish(new Error("OAuth state mismatch / 状态校验失败"));
-      exchange(p, code, verifier, state, u.origin ?? `http://localhost:${(server!.address() as AddressInfo).port}`)
+      exchange(p, code, verifier, state, u.origin || `http://localhost:${serverPort(server)}`)
         .then((t) => finish(null, t))
-        .catch((e) => finish(e));
+        .catch((e: unknown) => finish(e instanceof Error ? e : new Error(String(e))));
     });
 
     server.on("error", (e) => finish(e instanceof Error ? e : new Error(String(e))));
     server.listen(0, "127.0.0.1", () => {
-      const port = (server!.address() as AddressInfo).port;
+      const port = serverPort(server);
       const redirect = `http://localhost:${port}${p.callbackPath}`;
       const q = new URLSearchParams({
         client_id: p.clientId,
@@ -116,7 +121,8 @@ export function oauthAuthorize(
 }
 
 async function exchange(p: OAuthProvider, code: string, verifier: string, state: string, redirect: string): Promise<OAuthTokens> {
-  const r = await fetch(p.tokenUrl, {
+  const r = await requestUrl({
+    url: p.tokenUrl,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -127,9 +133,15 @@ async function exchange(p: OAuthProvider, code: string, verifier: string, state:
       code_verifier: verifier,
       state,
     }),
+    throw: false,
   });
-  const j = rec(await r.json().catch(() => ({})));
-  if (!r.ok || !j.access_token) throw new Error(`OAuth token exchange failed / 令牌交换失败 HTTP ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
+  let j: Record<string, unknown> = {};
+  try {
+    j = rec(JSON.parse(r.text));
+  } catch {
+    /* 非 JSON 响应 */
+  }
+  if (r.status < 200 || r.status >= 300 || !j.access_token) throw new Error(`OAuth token exchange failed / 令牌交换失败 HTTP ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
   return {
     accessToken: str(j.access_token),
     refreshToken: str(j.refresh_token),
@@ -140,13 +152,20 @@ async function exchange(p: OAuthProvider, code: string, verifier: string, state:
 /** 刷新令牌 */
 export async function oauthRefresh(providerId: string, refreshToken: string): Promise<OAuthTokens> {
   const p = OAUTH_PROVIDERS[providerId];
-  const r = await fetch(p.tokenUrl, {
+  const r = await requestUrl({
+    url: p.tokenUrl,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: p.clientId }),
+    throw: false,
   });
-  const j = rec(await r.json().catch(() => ({})));
-  if (!r.ok || !j.access_token) throw new Error(`OAuth refresh failed / 刷新失败 HTTP ${r.status}`);
+  let j: Record<string, unknown> = {};
+  try {
+    j = rec(JSON.parse(r.text));
+  } catch {
+    /* 非 JSON 响应 */
+  }
+  if (r.status < 200 || r.status >= 300 || !j.access_token) throw new Error(`OAuth refresh failed / 刷新失败 HTTP ${r.status}`);
   return {
     accessToken: str(j.access_token),
     refreshToken: typeof j.refresh_token === "string" ? j.refresh_token : refreshToken,

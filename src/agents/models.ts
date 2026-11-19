@@ -1,3 +1,4 @@
+import { requestUrl } from "obsidian";
 import { AgentCredential, NativeAgentSpec } from "../types";
 import { fetchCosyModels, CosyCred } from "./qwenwork-chat";
 import { arr, rec } from "./guards";
@@ -23,9 +24,9 @@ export async function fetchDynamicModels(
           ? { Authorization: `Bearer ${cred.oauthToken}`, "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20" }
           : { "x-api-key": key, "anthropic-version": "2023-06-01" }
         : { Authorization: `Bearer ${key}` };
-    const res = await fetch(base + "/v1/models", { headers, signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return [];
-    const json = rec(await res.json());
+    const res = await requestUrl({ url: base + "/v1/models", headers, throw: false });
+    if (res.status < 200 || res.status >= 300) return [];
+    const json = rec(res.json);
     const ids: string[] = arr(json.data).map((m) => String(rec(m).id ?? "")).filter(Boolean);
     if (spec.dynamic === "openai") return ids.filter((id) => /^(gpt-|o1|o3|o4|chatgpt)/.test(id));
     return ids;

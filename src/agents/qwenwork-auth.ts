@@ -190,7 +190,7 @@ export async function cosyPatLogin(siteId: string, pat: string): Promise<CosyCre
     deviceRefresh: "",
     patAuth: true,
     pat,
-  } as CosyCred;
+  };
   writeCosyCred(siteId, cred);
   return cred;
 }

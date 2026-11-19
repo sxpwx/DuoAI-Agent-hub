@@ -3,7 +3,7 @@ import { AGENTS, detectCli, getAgent } from "../agents/registry";
 import { checkLogin } from "../agents/auth";
 import { fetchDynamicModels } from "../agents/models";
 import { readCosyCred } from "../agents/qwenwork-auth";
-import { AgentEvent, AgentSpec, CliAgentSpec, Conversation, NativeAgentSpec, StoredMessage } from "../types";
+import { AgentEvent, AgentSpec, CliAgentSpec, Conversation, StoredMessage } from "../types";
 import { summarize, toolTier } from "../bridge/tools";
 import { t } from "../i18n";
 import { rec } from "../agents/guards";
@@ -131,7 +131,7 @@ export class ChatView extends ItemView {
     this.registerDomEvent(this.messagesEl, "contextmenu", (e: MouseEvent) => {
       e.preventDefault();
       const sel = this.containerEl.ownerDocument.getSelection()?.toString() ?? "";
-      const msgEl = (e.target as HTMLElement).closest(".ah-msg, .ah-tool") as HTMLElement | null;
+      const msgEl = (e.target as HTMLElement).closest<HTMLElement>(".ah-msg, .ah-tool");
       const menu = new Menu();
       if (sel.trim()) {
         menu.addItem((i) =>
@@ -169,13 +169,13 @@ export class ChatView extends ItemView {
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        this.send();
+        void this.send();
       }
     });
     this.sendBtn = input.createEl("button", { cls: "ah-send-btn mod-cta", text: t("send") });
     this.sendBtn.addEventListener("click", () => {
       if (this.abort) this.stop();
-      else this.send();
+      else void this.send();
     });
 
     await this.refreshModels();
@@ -227,7 +227,7 @@ export class ChatView extends ItemView {
     } else {
       models = this.modelCache[id] && !force ? this.modelCache[id] : [...spec.models];
       if (force || !this.modelCache[id]) {
-        const cli = spec as CliAgentSpec;
+        const cli: CliAgentSpec = spec;
         if (cli.dynamicModels) {
           const det = detectCli(cli, this.plugin.settings.cliPaths[id]);
           if (det.available && det.path) {
@@ -243,9 +243,11 @@ export class ChatView extends ItemView {
     for (const m of models) this.modelSelect.createEl("option", { value: m, text: m });
     const saved = this.plugin.settings.selectedModels[id];
     this.modelSelect.value = saved && models.includes(saved) ? saved : models[0] ?? "";
-    this.modelSelect.onchange = async () => {
-      this.plugin.settings.selectedModels[id] = this.modelSelect.value;
-      await this.plugin.saveSettings();
+    this.modelSelect.onchange = () => {
+      void (async () => {
+        this.plugin.settings.selectedModels[id] = this.modelSelect.value;
+        await this.plugin.saveSettings();
+      })();
     };
     this.updateStatus();
     await this.maybePromptLogin();
@@ -309,11 +311,13 @@ export class ChatView extends ItemView {
       this.app,
       spec,
       exe,
-      async () => {
-        this.loginState[spec.id] = true;
-        this.loginBtn.hide();
-        await this.refreshModels(true);
-        this.updateStatus();
+      () => {
+        void (async () => {
+          this.loginState[spec.id] = true;
+          this.loginBtn.hide();
+          await this.refreshModels(true);
+          this.updateStatus();
+        })();
       },
       {
         credentials: this.plugin.settings.credentials,
@@ -468,7 +472,7 @@ export class ChatView extends ItemView {
       return;
     }
     this.inputEl.value = text;
-    this.send();
+    void this.send();
   }
 
   private stop() {

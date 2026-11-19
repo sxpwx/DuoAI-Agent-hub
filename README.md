@@ -71,7 +71,7 @@ npm run dev     # 监听模式
 
 ### 许可证
 
-MIT（见 LICENSE）。COSY 协议部分移植自 MIT 社区项目 @magpie-community/opencode-qoder-auth / CLIProxyAPI，保留其版权声明。
+MIT（见 LICENSE）。COSY 协议部分移植自 MIT 社区项目 @magpie-community/opencode-qoder-auth / CLIProxyAPI，保留其版权声明（见 NOTICE.md）。
 
 ### 已知限制
 
@@ -146,7 +146,7 @@ See `src/` for the bilingual i18n dictionary, COSY/Anthropic/OpenAI protocol loo
 
 ### License
 
-MIT (see LICENSE). The COSY protocol portions are ported from the MIT community projects @magpie-community/opencode-qoder-auth / CLIProxyAPI; their copyright notices are retained.
+MIT (see LICENSE). The COSY protocol portions are ported from the MIT community projects @magpie-community/opencode-qoder-auth / CLIProxyAPI; their copyright notices are retained (see NOTICE.md).
 
 ### Known limitations
 
