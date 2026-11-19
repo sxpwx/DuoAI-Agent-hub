@@ -44,7 +44,7 @@ export class BridgeServer {
       this.server!.once("error", reject);
       this.server!.listen(0, "127.0.0.1", () => resolve());
     });
-    const addr = this.server!.address();
+    const addr = this.server.address();
     this.port = addr && typeof addr === "object" ? addr.port : 0;
   }
 

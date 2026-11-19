@@ -83,7 +83,7 @@ export default class AgentHubPlugin extends Plugin {
     const loaded = rec((await this.loadData()) as unknown);
     const credentials: Record<string, AgentCredential> = {};
     for (const [id, c] of Object.entries(rec(loaded.credentials))) {
-      credentials[id] = { ...rec(c) } as AgentCredential;
+      credentials[id] = { ...rec(c) };
     }
     // 迁移旧版 api / pat 配置
     for (const [id, cfg] of Object.entries(rec(loaded.api))) {

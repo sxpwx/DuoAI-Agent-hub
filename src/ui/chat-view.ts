@@ -103,7 +103,9 @@ export class ChatView extends ItemView {
       void (async () => {
         const all = await this.plugin.loadHistory();
         new HistoryModal(this.app, all, {
-          open: (c) => this.loadConversation(c),
+          open: (c) => {
+            void this.loadConversation(c);
+          },
           remove: async (id) => {
             await this.plugin.deleteConversation(id);
             if (this.conv?.id === id) this.conv = null;
