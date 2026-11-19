@@ -3,6 +3,7 @@ import { AgentCredential, AgentSpec, CliAgentSpec, NativeAgentSpec } from "../ty
 import { checkLogin, startLogin, LoginProcess } from "../agents/auth";
 import { cosyDeviceLogin, cosyPatLogin, readClaudeLocalOAuth, readCosyCred } from "../agents/qwenwork-auth";
 import { fetchDynamicModels } from "../agents/models";
+import { oauthAuthorize } from "../agents/oauth";
 import { t } from "../i18n";
 
 export interface LoginDeps {
@@ -122,6 +123,46 @@ export class LoginModal extends Modal {
     const spec = this.spec as NativeAgentSpec;
     const cur = this.deps.credentials[spec.id] ?? {};
     contentEl.createEl("p", { cls: "ah-confirm-hint", text: t(`agent.${spec.id}.hint`) || t("credHintDefault") });
+
+    if (spec.oauth) {
+      const box = contentEl.createDiv({ cls: "ah-login-pat" });
+      box.createEl("p", { cls: "ah-confirm-hint", text: t("oauthHint") });
+      const btn = box.createEl("button", { text: t("browserLogin"), cls: "mod-cta" });
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        this.statusEl.setText(t("openingLogin"));
+        try {
+          const tokens = await oauthAuthorize(
+            spec.oauth!,
+            (url) => {
+              this.log(url);
+              window.open(url, "_blank");
+              this.statusEl.setText(t("browserOpened"));
+            },
+            () => this.settled
+          );
+          if (this.settled) return;
+          await this.deps.saveCredential(spec.id, {
+            ...cur,
+            oauthToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresAt: tokens.expiresAt,
+          });
+          this.succeed();
+        } catch (e: any) {
+          if (this.settled) return;
+          this.statusEl.setText(String(e?.message ?? e));
+          btn.disabled = false;
+        }
+      });
+    }
+    if (spec.id === "doubao") {
+      const box = contentEl.createDiv({ cls: "ah-login-pat" });
+      box.createEl("p", { cls: "ah-confirm-hint", text: t("consoleHint") });
+      const ob = box.createEl("button", { text: t("openConsole") });
+      ob.addEventListener("click", () => window.open("https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey", "_blank"));
+    }
+
     const form = contentEl.createDiv({ cls: "ah-login-pat" });
     let baseInput: HTMLInputElement | null = null;
     if (spec.protocol === "openai-compat") {

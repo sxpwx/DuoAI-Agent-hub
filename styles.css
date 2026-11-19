@@ -37,6 +37,15 @@
   padding: 4px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ah-msg .ah-content,
+.ah-tool-summary,
+.ah-tool-result {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 .ah-empty {
   color: var(--text-muted);

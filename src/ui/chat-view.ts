@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import { AGENTS, detectCli, getAgent } from "../agents/registry";
 import { checkLogin } from "../agents/auth";
 import { fetchDynamicModels } from "../agents/models";
@@ -121,6 +121,38 @@ export class ChatView extends ItemView {
     this.statusEl = root.createDiv({ cls: "ah-status" });
     this.messagesEl = root.createDiv({ cls: "ah-messages" });
     this.showEmpty();
+    this.registerDomEvent(this.messagesEl, "contextmenu", (e: MouseEvent) => {
+      e.preventDefault();
+      const sel = window.getSelection()?.toString() ?? "";
+      const msgEl = (e.target as HTMLElement).closest(".ah-msg, .ah-tool") as HTMLElement | null;
+      const menu = new Menu();
+      if (sel.trim()) {
+        menu.addItem((i) =>
+          i.setTitle(t("ctxCopySelection")).setIcon("copy").onClick(() => {
+            navigator.clipboard.writeText(sel).then(() => new Notice(t("copied"))).catch(() => new Notice(t("copyFail")));
+          })
+        );
+      }
+      if (msgEl) {
+        menu.addItem((i) =>
+          i.setTitle(t("ctxCopyMessage")).setIcon("copy").onClick(() => {
+            const clone = msgEl.cloneNode(true) as HTMLElement;
+            clone.querySelectorAll(".ah-msg-actions").forEach((n) => n.remove());
+            navigator.clipboard.writeText(clone.innerText).then(() => new Notice(t("copied"))).catch(() => new Notice(t("copyFail")));
+          })
+        );
+      }
+      menu.addItem((i) =>
+        i.setTitle(t("ctxCopyAll")).setIcon("documents").onClick(() => {
+          const all = (this.conv?.messages ?? [])
+            .map((m) => (m.role === "tool" ? `[${m.tool}] ${m.result ?? ""}` : m.text ?? ""))
+            .filter(Boolean)
+            .join("\n\n");
+          navigator.clipboard.writeText(all).then(() => new Notice(t("copied"))).catch(() => new Notice(t("copyFail")));
+        })
+      );
+      menu.showAtMouseEvent(e);
+    });
 
     const input = root.createDiv({ cls: "ah-input" });
     this.inputEl = input.createEl("textarea", {

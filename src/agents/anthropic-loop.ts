@@ -29,7 +29,8 @@ export async function runAnthropicLoop(
   auth: AnthropicAuth,
   ctx: RunContext,
   execute: ExecFn,
-  networkEnabled = true
+  networkEnabled = true,
+  onRefresh?: () => Promise<string | null>
 ): Promise<void> {
   if (!auth.apiKey && !auth.oauthToken) {
     ctx.onEvent({ type: "error", text: t("fillAnthropic") });
@@ -65,6 +66,13 @@ export async function runAnthropicLoop(
       if (ctx.signal.aborted) return;
       ctx.onEvent({ type: "error", text: `网络请求失败：${e?.message ?? e}` });
       return;
+    }
+    if (res.status === 401 && onRefresh && auth.oauthToken) {
+      const nt = await onRefresh();
+      if (nt) {
+        auth.oauthToken = nt;
+        continue;
+      }
     }
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => "");

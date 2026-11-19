@@ -105,6 +105,8 @@ export interface NativeAgentSpec {
   site?: string;
   /** 凭据获取方式 */
   cred: "device" | "device+pat" | "key" | "key+oauth";
+  /** 官方 OAuth 提供方（浏览器弹窗授权） */
+  oauth?: "anthropic" | "openai";
   baseUrl?: string;
   models: string[];
   dynamic?: "cosy" | "anthropic" | "openai";
@@ -116,6 +118,8 @@ export interface AgentCredential {
   apiKey?: string;
   pat?: string;
   oauthToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
   baseUrl?: string;
 }
 

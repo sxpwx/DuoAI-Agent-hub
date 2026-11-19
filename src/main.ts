@@ -8,6 +8,8 @@ import { nodeForBridge } from "./agents/detect";
 import { runCliAgent } from "./agents/cli-runner";
 import { runApiLoop, runCosyLoop } from "./agents/api-loop";
 import { runAnthropicLoop } from "./agents/anthropic-loop";
+import { runCodexOAuthLoop } from "./agents/codex-loop";
+import { oauthRefresh } from "./agents/oauth";
 import { repairLegacyCreds, readCosyCred, readClaudeLocalOAuth } from "./agents/qwenwork-auth";
 import { ChatView, VIEW_TYPE } from "./ui/chat-view";
 import { ConfirmModal } from "./ui/confirm-modal";
@@ -220,13 +222,47 @@ export default class AgentHubPlugin extends Plugin {
         return;
       }
       if (spec.protocol === "anthropic") {
-        const oauth = cred.oauthToken || readClaudeLocalOAuth() || undefined;
+        let oauth = cred.oauthToken || readClaudeLocalOAuth() || undefined;
+        const refresh = async () => {
+          const c = this.settings.credentials[spec.id];
+          if (!c?.refreshToken) return null;
+          try {
+            const tk = await oauthRefresh("anthropic", c.refreshToken);
+            this.settings.credentials[spec.id] = { ...c, oauthToken: tk.accessToken, refreshToken: tk.refreshToken, expiresAt: tk.expiresAt };
+            await this.saveSettings();
+            return tk.accessToken;
+          } catch {
+            return null;
+          }
+        };
+        if (oauth && cred.expiresAt && Date.now() > cred.expiresAt - 60000 && cred.refreshToken) {
+          oauth = (await refresh()) ?? oauth;
+        }
         await runAnthropicLoop(
           { baseUrl: cred.baseUrl || spec.baseUrl || "https://api.anthropic.com", apiKey: cred.apiKey, oauthToken: oauth },
           ctx,
           exec,
-          this.settings.networkTools
+          this.settings.networkTools,
+          refresh
         );
+        return;
+      }
+      if (spec.protocol === "openai" && cred.oauthToken) {
+        const refresh = async () => {
+          const c = this.settings.credentials[spec.id];
+          if (!c?.refreshToken) return null;
+          try {
+            const tk = await oauthRefresh("openai", c.refreshToken);
+            this.settings.credentials[spec.id] = { ...c, oauthToken: tk.accessToken, refreshToken: tk.refreshToken, expiresAt: tk.expiresAt };
+            await this.saveSettings();
+            return tk.accessToken;
+          } catch {
+            return null;
+          }
+        };
+        let token = cred.oauthToken;
+        if (cred.expiresAt && Date.now() > cred.expiresAt - 60000 && cred.refreshToken) token = (await refresh()) ?? token;
+        await runCodexOAuthLoop(token, ctx, exec, this.settings.networkTools, refresh);
         return;
       }
       await runApiLoop(
