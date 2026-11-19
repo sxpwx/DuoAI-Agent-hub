@@ -12,9 +12,17 @@ import { resolveCli, whichSync } from "./detect";
 function cliPath(): string | null {
   const p = whichSync("codebuddy");
   if (p) return p;
-  const appdata = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
-  const bin = path.join(appdata, "npm", "node_modules", "@tencent-ai", "codebuddy-code", "bin", "codebuddy");
-  return fs.existsSync(bin) ? bin : null;
+  const roots = [
+    process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"),
+    path.join(os.homedir(), "AppData", "Roaming"),
+    process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"),
+  ];
+  for (const r of roots) {
+    const bin = path.join(r, "npm", "node_modules", "@tencent-ai", "codebuddy-code", "bin", "codebuddy");
+    if (fs.existsSync(bin)) return bin;
+  }
+  const wb = path.join(os.homedir(), ".workbuddy", "bin", "codebuddy");
+  return fs.existsSync(wb) ? wb : null;
 }
 
 function gatewayPassword(): string | null {

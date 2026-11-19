@@ -135,15 +135,50 @@ export function nodeForBridge(): { exe: string; electronRunAsNode: boolean } {
   return { exe: process.execPath, electronRunAsNode: true };
 }
 
+/** 不依赖 PATH 的 node 发现 */
+export function findNodeExe(): { exe: string; env: Record<string, string> } {
+  const w = whichSync("node");
+  if (w && !/electron|obsidian/i.test(w)) return { exe: w, env: {} };
+  const dirs = [
+    path.join(process.env.ProgramFiles ?? "C:\\Program Files", "nodejs"),
+    path.join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "nodejs"),
+    path.dirname(process.execPath),
+  ];
+  for (const d of dirs) {
+    const p = path.join(d, "node.exe");
+    if (fs.existsSync(p)) return { exe: p, env: {} };
+  }
+  return { exe: process.execPath, env: { ELECTRON_RUN_AS_NODE: "1" } };
+}
+
+/** 不依赖 PATH 的 npm 发现（直接定位 npm-cli.js，用 node 启动） */
+export function findNpmCli(): { exe: string; args: string[]; env: Record<string, string> } | null {
+  const w = whichSync("npm");
+  if (w) {
+    const r = resolveCli(w);
+    if (r) return { exe: r.exe, args: r.prefixArgs, env: r.env };
+  }
+  const node = findNodeExe();
+  const dirs = [
+    path.dirname(node.exe),
+    path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "npm"),
+    path.join(process.env.ProgramFiles ?? "C:\\Program Files", "nodejs"),
+  ];
+  for (const d of dirs) {
+    const cli = path.join(d, "node_modules", "npm", "bin", "npm-cli.js");
+    if (fs.existsSync(cli)) return { exe: node.exe, args: [cli], env: node.env };
+  }
+  return null;
+}
+
 /** 应用内一键安装 npm 全局 CLI 包 */
 export function installNpmPackage(pkg: string, onProgress?: (line: string) => void): Promise<{ ok: boolean; tail: string }> {
   return new Promise((resolve) => {
-    const npm = whichSync("npm");
-    const resolved = npm ? resolveCli(npm) : null;
-    if (!resolved) return resolve({ ok: false, tail: "未找到 npm，请先安装 Node.js" });
+    const resolved = findNpmCli();
+    if (!resolved) return resolve({ ok: false, tail: "未找到 npm/Node.js / npm or Node.js not found" });
     let child;
     try {
-      child = spawn(resolved.exe, [...resolved.prefixArgs, "install", "-g", pkg, "--no-audit", "--no-fund"], {
+      child = spawn(resolved.exe, [...resolved.args, "install", "-g", pkg, "--no-audit", "--no-fund"], {
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, ...resolved.env },

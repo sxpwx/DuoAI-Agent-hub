@@ -4,7 +4,7 @@ import { installNpmPackage } from "./agents/detect";
 import { readCosyCred, cosyPatLogin, readClaudeLocalOAuth } from "./agents/qwenwork-auth";
 import { CliAgentSpec, NativeAgentSpec } from "./types";
 import { LoginModal } from "./ui/login-modal";
-import { t } from "./i18n";
+import { t, t2 } from "./i18n";
 import type AgentHubPlugin from "./main";
 
 export class AgentHubSettingTab extends PluginSettingTab {
@@ -18,13 +18,13 @@ export class AgentHubSettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: t("settingsTitle") });
 
     new Setting(containerEl)
-      .setName(t("language"))
-      .setDesc(t("languageDesc"))
+      .setName(t2("language"))
+      .setDesc(t2("languageDesc", undefined, "\n"))
       .addDropdown((d) =>
         d
-          .addOption("auto", t("langAuto"))
-          .addOption("zh", t("langZh"))
-          .addOption("en", t("langEn"))
+          .addOption("auto", t2("langAuto"))
+          .addOption("zh", t2("langZh"))
+          .addOption("en", t2("langEn"))
           .setValue(this.plugin.settings.language)
           .onChange(async (v) => {
             this.plugin.settings.language = v as "auto" | "zh" | "en";
@@ -34,12 +34,12 @@ export class AgentHubSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("permMode"))
-      .setDesc(t("permModeDesc"))
+      .setName(t2("permMode"))
+      .setDesc(t2("permModeDesc", undefined, "\n"))
       .addDropdown((d) =>
         d
-          .addOption("confirm", t("permConfirmOpt"))
-          .addOption("full", t("permFullOpt"))
+          .addOption("confirm", t2("permConfirmOpt"))
+          .addOption("full", t2("permFullOpt"))
           .setValue(this.plugin.settings.permissionMode)
           .onChange(async (v) => {
             this.plugin.settings.permissionMode = v as "confirm" | "full";
@@ -48,8 +48,8 @@ export class AgentHubSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("networkTools"))
-      .setDesc(t("networkToolsDesc"))
+      .setName(t2("networkTools"))
+      .setDesc(t2("networkToolsDesc", undefined, "\n"))
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.networkTools).onChange(async (v) => {
           this.plugin.settings.networkTools = v;
@@ -58,8 +58,8 @@ export class AgentHubSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("confirmTimeout"))
-      .setDesc(t("confirmTimeoutDesc"))
+      .setName(t2("confirmTimeout"))
+      .setDesc(t2("confirmTimeoutDesc", undefined, "\n"))
       .addText((tx) =>
         tx.setValue(String(this.plugin.settings.confirmTimeoutSec)).onChange(async (v) => {
           const n = parseInt(v, 10);
@@ -72,13 +72,13 @@ export class AgentHubSettingTab extends PluginSettingTab {
 
     for (const spec of AGENTS) {
       containerEl.createEl("h3", { text: spec.label });
-      containerEl.createEl("p", { cls: "ah-setting-desc", text: t(`agent.${spec.id}.desc`) });
+      containerEl.createEl("p", { cls: "ah-setting-desc", text: t2(`agent.${spec.id}.desc`) });
       if (spec.kind === "native") this.nativeSection(containerEl, spec);
       else if (spec.kind === "cli") this.cliSection(containerEl, spec);
     }
 
     containerEl.createEl("h3", { text: t("securityTitle") });
-    containerEl.createEl("p", { cls: "ah-setting-desc", text: t("securityDesc") });
+    containerEl.createEl("p", { cls: "ah-setting-desc", text: t2("securityDesc", undefined, "\n") });
   }
 
   private nativeSection(containerEl: HTMLElement, spec: NativeAgentSpec) {
@@ -100,8 +100,8 @@ export class AgentHubSettingTab extends PluginSettingTab {
     renderStatus();
 
     new Setting(containerEl)
-      .setName(t("loginCredSetup"))
-      .setDesc(t(`agent.${spec.id}.hint`))
+      .setName(t2("loginCredSetup"))
+      .setDesc(t2(`agent.${spec.id}.hint`))
       .addButton((b) =>
         b.setButtonText(spec.protocol === "cosy" ? t("loginAuthBtn") : t("configCredBtn")).onClick(() => {
           new LoginModal(this.app, spec, null, () => renderStatus(), {
@@ -116,7 +116,7 @@ export class AgentHubSettingTab extends PluginSettingTab {
 
     const cur = this.plugin.settings.credentials[spec.id] ?? {};
     if (spec.protocol === "openai-compat") {
-      new Setting(containerEl).setName(t("baseUrl")).addText((tx) =>
+      new Setting(containerEl).setName(t2("baseUrl")).addText((tx) =>
         tx.setPlaceholder(spec.baseUrl ?? "https://…/v1").setValue(cur.baseUrl ?? spec.baseUrl ?? "").onChange(async (v) => {
           this.plugin.settings.credentials[spec.id] = { ...cur, baseUrl: v.trim() };
           await this.plugin.saveSettings();
@@ -124,7 +124,7 @@ export class AgentHubSettingTab extends PluginSettingTab {
       );
     }
     if (spec.cred === "key" || spec.cred === "key+oauth") {
-      new Setting(containerEl).setName(t("apiKey")).addText((tx) => {
+      new Setting(containerEl).setName(t2("apiKey")).addText((tx) => {
         tx.inputEl.type = "password";
         tx.setValue(cur.apiKey ?? "").onChange(async (v) => {
           this.plugin.settings.credentials[spec.id] = { ...this.plugin.settings.credentials[spec.id], apiKey: v.trim() };
@@ -134,10 +134,10 @@ export class AgentHubSettingTab extends PluginSettingTab {
       });
       if (spec.cred === "key+oauth") {
         new Setting(containerEl)
-          .setName(t("localClaude"))
-          .setDesc(t("localClaudeDesc"))
+          .setName(t2("localClaude"))
+          .setDesc(t2("localClaudeDesc", undefined, "\n"))
           .addButton((b) =>
-            b.setButtonText(t("readBtn")).onClick(async () => {
+            b.setButtonText(t2("readBtn")).onClick(async () => {
               const tk = readClaudeLocalOAuth();
               if (!tk) return new Notice(t("readNone"));
               this.plugin.settings.credentials[spec.id] = { ...this.plugin.settings.credentials[spec.id], oauthToken: tk };
@@ -150,8 +150,8 @@ export class AgentHubSettingTab extends PluginSettingTab {
     }
     if (spec.cred === "device+pat") {
       new Setting(containerEl)
-        .setName(t("patOptional"))
-        .setDesc(t("patDesc"))
+        .setName(t2("patOptional"))
+        .setDesc(t2("patDesc", undefined, "\n"))
         .addText((tx) => {
           tx.inputEl.type = "password";
           tx.setPlaceholder("pt-…").onChange(async (v) => {
@@ -180,8 +180,8 @@ export class AgentHubSettingTab extends PluginSettingTab {
     renderStatus();
 
     new Setting(containerEl)
-      .setName(t("cliPath"))
-      .setDesc(t("cliPathDesc"))
+      .setName(t2("cliPath"))
+      .setDesc(t2("cliPathDesc", undefined, "\n"))
       .addText((tx) =>
         tx
           .setPlaceholder(t("autodetect"))
@@ -193,7 +193,7 @@ export class AgentHubSettingTab extends PluginSettingTab {
           })
       )
       .addButton((b) =>
-        b.setButtonText(t("redetect")).onClick(() => {
+        b.setButtonText(t2("redetect")).onClick(() => {
           renderStatus();
           new Notice(t("detected"));
         })
@@ -205,16 +205,16 @@ export class AgentHubSettingTab extends PluginSettingTab {
     if (npmPkg) {
       const progressEl = containerEl.createEl("p", { cls: "ah-setting-hint" });
       new Setting(containerEl)
-        .setName(t("installCli"))
-        .setDesc(t("installCliDesc", { pkg: npmPkg }))
+        .setName(t2("installCli"))
+        .setDesc(t2("installCliDesc", { pkg: npmPkg }))
         .addButton((b) =>
-          b.setButtonText(t("install")).onClick(async () => {
+          b.setButtonText(t2("install")).onClick(async () => {
             b.setDisabled(true);
-            b.setButtonText(t("installing"));
-            progressEl.setText(t("installProgress"));
+            b.setButtonText(t2("installing"));
+            progressEl.setText(t2("installProgress"));
             const { ok, tail } = await installNpmPackage(npmPkg, (line) => progressEl.setText(line));
             b.setDisabled(false);
-            b.setButtonText(t("install"));
+            b.setButtonText(t2("install"));
             progressEl.setText(ok ? t("installOk") : t("installFail", { tail: tail.slice(-300) }));
             new Notice(ok ? t("installOkNotice", { pkg: npmPkg }) : t("installFailNotice", { pkg: npmPkg }));
             renderStatus();

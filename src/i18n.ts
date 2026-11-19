@@ -300,3 +300,14 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
   return s;
 }
+
+/** 中英并列（设置页等需要同时展示两种语言的场景） */
+export function t2(key: string, vars?: Record<string, string | number>, sep = " / "): string {
+  const entry = D[key];
+  if (!entry) return key;
+  const fill = (s: string) => {
+    if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
+    return s;
+  };
+  return fill(entry.zh) + sep + fill(entry.en);
+}
