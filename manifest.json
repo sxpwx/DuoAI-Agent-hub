@@ -1,9 +1,10 @@
 {
   "id": "agent-hub",
   "name": "Agent Hub",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "minAppVersion": "1.4.0",
-  "description": "调用千问办公、Qoder CN、WorkBuddy、Claude Code、Codex、豆包等 Agent 操作 vault；内置协议、三级权限确认、双语界面。Run QwenWork/Qoder/WorkBuddy/Claude/Codex/Doubao agents on your vault: built-in protocols, 3-tier permission confirmations, bilingual UI.",
+  "description": "Run QwenWork, Qoder CN, WorkBuddy, Claude Code, Codex and Doubao agents on your vault with built-in protocols, one-click browser sign-in, vault-only tools and three-tier permission confirmations.",
   "author": "sxpwx",
+  "authorUrl": "https://github.com/sxpwx",
   "isDesktopOnly": true
 }
