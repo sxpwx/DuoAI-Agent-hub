@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-agent-hub",
+  "version": "0.1.0",
+  "description": "在 Obsidian 中调用多种 AI Agent（千问办公 / WorkBuddy / Claude Code / Codex / 豆包办公等），仅限操作 vault，三级权限确认。",
+  "private": true,
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.7.0"
+  }
+}
