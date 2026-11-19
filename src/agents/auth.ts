@@ -6,6 +6,10 @@ import { resolveCli } from "./detect";
 export function checkLogin(spec: CliAgentSpec, cliPath: string, env?: Record<string, string>): Promise<boolean | null> {
   return new Promise((resolve) => {
     if (!spec.login) return resolve(null);
+    if (spec.login.custom === "codebuddy-daemon") {
+      import("./codebuddy-auth").then((m) => m.codebuddyAuthStatus()).then(resolve).catch(() => resolve(null));
+      return;
+    }
     const resolved = resolveCli(cliPath);
     if (!resolved) return resolve(null);
     let child: ChildProcess;

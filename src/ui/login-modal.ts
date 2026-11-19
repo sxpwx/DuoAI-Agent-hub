@@ -4,6 +4,7 @@ import { checkLogin, startLogin, LoginProcess } from "../agents/auth";
 import { cosyDeviceLogin, cosyPatLogin, readClaudeLocalOAuth, readCosyCred } from "../agents/qwenwork-auth";
 import { fetchDynamicModels } from "../agents/models";
 import { oauthAuthorize } from "../agents/oauth";
+import { codebuddyLogin } from "../agents/codebuddy-auth";
 import { t } from "../i18n";
 
 export interface LoginDeps {
@@ -48,7 +49,8 @@ export class LoginModal extends Modal {
       this.buildCredForm(contentEl);
     } else {
       contentEl.createEl("p", { cls: "ah-confirm-hint", text: t("replHint") });
-      this.beginRepl();
+      if ((this.spec as CliAgentSpec).login?.custom === "codebuddy-daemon") this.beginCodebuddy();
+      else this.beginRepl();
     }
 
     const btns = contentEl.createDiv({ cls: "ah-confirm-buttons" });
@@ -56,6 +58,7 @@ export class LoginModal extends Modal {
     this.retryBtn.hide();
     this.retryBtn.addEventListener("click", () => {
       if (this.spec.kind === "native" && this.spec.protocol === "cosy") this.beginDevice();
+      else if (this.spec.kind === "cli" && (this.spec as CliAgentSpec).login?.custom === "codebuddy-daemon") this.beginCodebuddy();
       else if (this.spec.kind === "cli") this.beginRepl();
     });
     const cancel = btns.createEl("button", { text: t("cancel") });
@@ -212,6 +215,28 @@ export class LoginModal extends Modal {
       this.succeed();
     } else {
       this.statusEl.setText(t("verifyFail"));
+    }
+  }
+
+  // ---- WorkBuddy 守护进程一键授权 ----
+  private async beginCodebuddy() {
+    this.settled = false;
+    this.retryBtn.hide();
+    this.statusEl.setText(t("openingLogin"));
+    try {
+      await codebuddyLogin(
+        (url) => {
+          this.log(url);
+          window.open(url, "_blank");
+          this.statusEl.setText(t("browserOpened"));
+        },
+        () => this.settled
+      );
+      if (!this.settled) this.succeed();
+    } catch (e: any) {
+      if (this.settled) return;
+      this.statusEl.setText(String(e?.message ?? e));
+      this.retryBtn.show();
     }
   }
 

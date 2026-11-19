@@ -272,8 +272,8 @@ const D: Record<string, { zh: string; en: string }> = {
     en: "Tencent WorkBuddy official CLI (codebuddy); in-app auto install & sign-in",
   },
   "agent.workbuddy.hint": {
-    zh: "选择该 Agent 后自动弹出登录授权（浏览器完成）。",
-    en: "Selecting this agent opens sign-in automatically (browser-based).",
+    zh: "选择后自动启动官方守护进程并弹出浏览器授权（与 WorkBuddy 桌面端同账号），无需手动终端。",
+    en: "Selecting auto-starts the official daemon and opens browser authorization (same account as WorkBuddy desktop); no manual terminal.",
   },
   "agent.doubao.desc": {
     zh: "火山方舟 API（OpenAI 兼容），内置 agent 循环",

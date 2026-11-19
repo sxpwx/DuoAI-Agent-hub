@@ -93,7 +93,7 @@ const workbuddy: CliAgentSpec = {
         return null;
       }
     },
-    custom: "codebuddy-repl",
+    custom: "codebuddy-daemon",
   },
   stdinJson: true,
   buildArgs: (_exe, ctx) => [

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-agent-hub",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "在 Obsidian 中调用多种 AI Agent（千问办公 / WorkBuddy / Claude Code / Codex / 豆包办公等），仅限操作 vault，三级权限确认。",
   "private": true,
   "scripts": {
