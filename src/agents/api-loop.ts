@@ -2,8 +2,16 @@ import { ApiConfig, RunContext } from "../types";
 import { TOOL_DEFS } from "../bridge/tools";
 import { cosyChat, CosyCred } from "./qwenwork-chat";
 import { t } from "../i18n";
+import { arr, num, rec, str } from "./guards";
 
 type ExecFn = (name: string, args: Record<string, unknown>) => Promise<string>;
+
+interface ChatMessage {
+  role: string;
+  content?: unknown;
+  tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[];
+  tool_call_id?: string;
+}
 
 function toolDefs(networkEnabled: boolean) {
   return TOOL_DEFS.filter((t) => !t.network || networkEnabled).map((t) => ({
@@ -14,7 +22,7 @@ function toolDefs(networkEnabled: boolean) {
 
 async function execCalls(
   calls: { id: string; name: string; args: string }[],
-  messages: any[],
+  messages: ChatMessage[],
   content: string,
   ctx: RunContext,
   execute: ExecFn
@@ -30,7 +38,7 @@ async function execCalls(
     if (ctx.signal.aborted) return true;
     let args: Record<string, unknown> = {};
     try {
-      args = JSON.parse(c.args || "{}");
+      args = rec(JSON.parse(c.args || "{}"));
     } catch {
       /* 工具侧报错 */
     }
@@ -39,8 +47,8 @@ async function execCalls(
       const result = await execute(c.name, args);
       ctx.onEvent({ type: "tool_result", text: result.slice(0, 600) });
       messages.push({ role: "tool", tool_call_id: c.id, content: result });
-    } catch (e: any) {
-      const msg = String(e?.message ?? e);
+    } catch (e) {
+      const msg = String(rec(e).message ?? e);
       ctx.onEvent({ type: "tool_result", text: msg, isError: true });
       messages.push({ role: "tool", tool_call_id: c.id, content: `错误：${msg}` });
     }
@@ -57,7 +65,7 @@ export async function runCosyLoop(
   networkEnabled = true
 ): Promise<void> {
   const tools = toolDefs(networkEnabled);
-  const messages: any[] = [
+  const messages: ChatMessage[] = [
     { role: "system", content: ctx.systemPrompt },
     { role: "user", content: ctx.prompt },
   ];
@@ -84,9 +92,9 @@ export async function runCosyLoop(
           return;
         }
       }
-    } catch (e: any) {
+    } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: String(e?.message ?? e) });
+      ctx.onEvent({ type: "error", text: String(rec(e).message ?? e) });
       return;
     }
     if (stop !== "stop" && (await execCalls(calls, messages, content, ctx, execute))) continue;
@@ -107,7 +115,7 @@ export async function runApiLoop(
     return;
   }
   const tools = toolDefs(networkEnabled);
-  const messages: any[] = [
+  const messages: ChatMessage[] = [
     { role: "system", content: ctx.systemPrompt },
     { role: "user", content: ctx.prompt },
   ];
@@ -124,9 +132,9 @@ export async function runApiLoop(
         body: JSON.stringify({ model: cfg.model, messages, tools, stream: true }),
         signal: ctx.signal,
       });
-    } catch (e: any) {
+    } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `网络请求失败：${e?.message ?? e}` });
+      ctx.onEvent({ type: "error", text: `网络请求失败：${rec(e).message ?? e}` });
       return;
     }
     if (!res.ok || !res.body) {
@@ -152,31 +160,33 @@ export async function runApiLoop(
           if (!line.startsWith("data:")) continue;
           const payload = line.slice(5).trim();
           if (payload === "[DONE]") continue;
-          let obj: any;
+          let obj: unknown;
           try {
             obj = JSON.parse(payload);
           } catch {
             continue;
           }
-          const choice = obj.choices?.[0];
-          if (!choice) continue;
-          const delta = choice.delta ?? {};
+          const choiceRaw = arr(rec(obj).choices)[0];
+          if (!choiceRaw) continue;
+          const delta = rec(rec(choiceRaw).delta);
           if (delta.content) {
-            content += delta.content;
-            ctx.onEvent({ type: "text", text: delta.content });
+            content += str(delta.content);
+            ctx.onEvent({ type: "text", text: str(delta.content) });
           }
-          for (const tc of delta.tool_calls ?? []) {
-            const i = tc.index ?? 0;
-            if (!calls[i]) calls[i] = { id: tc.id ?? `call_${i}`, name: "", args: "" };
-            if (tc.id) calls[i].id = tc.id;
-            if (tc.function?.name) calls[i].name += tc.function.name;
-            if (tc.function?.arguments) calls[i].args += tc.function.arguments;
+          for (const tcRaw of arr(delta.tool_calls)) {
+            const tc = rec(tcRaw);
+            const fn = rec(tc.function);
+            const i = num(tc.index);
+            if (!calls[i]) calls[i] = { id: typeof tc.id === "string" ? tc.id : `call_${i}`, name: "", args: "" };
+            if (tc.id) calls[i].id = str(tc.id);
+            if (fn.name) calls[i].name += str(fn.name);
+            if (fn.arguments) calls[i].args += str(fn.arguments);
           }
         }
       }
-    } catch (e: any) {
+    } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `流读取中断：${e?.message ?? e}` });
+      ctx.onEvent({ type: "error", text: `流读取中断：${rec(e).message ?? e}` });
       return;
     }
     if (await execCalls(calls, messages, content, ctx, execute)) continue;

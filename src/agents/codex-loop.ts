@@ -1,14 +1,22 @@
 import { RunContext } from "../types";
 import { TOOL_DEFS } from "../bridge/tools";
 import { t } from "../i18n";
+import { rec, str } from "./guards";
 
 type ExecFn = (name: string, args: Record<string, unknown>) => Promise<string>;
 
 const ENDPOINT = "https://chatgpt.com/backend-api/codex/responses";
 
+interface ChatMessage {
+  role: string;
+  content?: unknown;
+  tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[];
+  tool_call_id?: string;
+}
+
 /** OpenAI 消息 → Responses API input items */
-function toInput(messages: any[]): any[] {
-  const out: any[] = [];
+function toInput(messages: ChatMessage[]): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
   for (const m of messages) {
     if (m.role === "system" || m.role === "developer") continue;
     if (m.role === "user") {
@@ -40,7 +48,7 @@ export async function runCodexOAuthLoop(
     parameters: tl.inputSchema,
     strict: false,
   }));
-  const messages: any[] = [
+  const messages: ChatMessage[] = [
     { role: "system", content: ctx.systemPrompt },
     { role: "user", content: ctx.prompt },
   ];
@@ -72,9 +80,9 @@ export async function runCodexOAuthLoop(
         }),
         signal: ctx.signal,
       });
-    } catch (e: any) {
+    } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `Network / 网络: ${e?.message ?? e}` });
+      ctx.onEvent({ type: "error", text: `Network / 网络: ${rec(e).message ?? e}` });
       return;
     }
     if (res.status === 401 && onRefresh) {
@@ -106,41 +114,43 @@ export async function runCodexOAuthLoop(
           const line = buf.slice(0, idx).trim();
           buf = buf.slice(idx + 1);
           if (!line.startsWith("data:")) continue;
-          let ev: any;
+          let ev: unknown;
           try {
             ev = JSON.parse(line.slice(5).trim());
           } catch {
             continue;
           }
-          const et = ev.type ?? "";
+          const e = rec(ev);
+          const et = str(e.type);
+          const item = rec(e.item);
           if (et === "response.output_text.delta") {
-            content += ev.delta ?? "";
-            ctx.onEvent({ type: "text", text: ev.delta ?? "" });
-          } else if (et === "response.output_item.added" && ev.item?.type === "function_call") {
-            calls.set(ev.item.id ?? ev.item.call_id, { call_id: ev.item.call_id, name: ev.item.name, args: "" });
+            content += str(e.delta);
+            ctx.onEvent({ type: "text", text: str(e.delta) });
+          } else if (et === "response.output_item.added" && item.type === "function_call") {
+            calls.set(str(item.id ?? item.call_id), { call_id: str(item.call_id), name: str(item.name), args: "" });
           } else if (et === "response.function_call_arguments.delta") {
-            const c = calls.get(ev.item_id);
-            if (c) c.args += ev.delta ?? "";
-          } else if (et === "response.output_item.done" && ev.item?.type === "function_call") {
-            const c = calls.get(ev.item.id ?? ev.item.call_id);
-            if (c && ev.item.arguments) c.args = ev.item.arguments;
+            const c = calls.get(str(e.item_id));
+            if (c) c.args += str(e.delta);
+          } else if (et === "response.output_item.done" && item.type === "function_call") {
+            const c = calls.get(str(item.id ?? item.call_id));
+            if (c && item.arguments) c.args = str(item.arguments);
           } else if (et === "response.completed") {
             completed = true;
           } else if (et === "response.failed" || et === "error") {
-            ctx.onEvent({ type: "error", text: String(ev.error?.message ?? ev.message ?? "Codex stream error") });
+            ctx.onEvent({ type: "error", text: String(rec(e.error).message ?? e.message ?? "Codex stream error") });
             return;
           }
         }
       }
-    } catch (e: any) {
+    } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `Stream / 流: ${e?.message ?? e}` });
+      ctx.onEvent({ type: "error", text: `Stream / 流: ${rec(e).message ?? e}` });
       return;
     }
 
     const list = [...calls.values()].filter((c) => c.name);
     if (completed && list.length) {
-      const assistantContent: any[] = [];
+      const assistantContent: Record<string, unknown>[] = [];
       if (content) assistantContent.push({ type: "output_text", text: content });
       messages.push({
         role: "assistant",
@@ -151,7 +161,7 @@ export async function runCodexOAuthLoop(
         if (ctx.signal.aborted) return;
         let args: Record<string, unknown> = {};
         try {
-          args = JSON.parse(c.args || "{}");
+          args = rec(JSON.parse(c.args || "{}"));
         } catch {
           /* tool-side error */
         }
@@ -160,8 +170,8 @@ export async function runCodexOAuthLoop(
           const result = await execute(c.name, args);
           ctx.onEvent({ type: "tool_result", text: result.slice(0, 600) });
           messages.push({ role: "tool", tool_call_id: c.call_id, content: result });
-        } catch (e: any) {
-          const msg = String(e?.message ?? e);
+        } catch (e) {
+          const msg = String(rec(e).message ?? e);
           ctx.onEvent({ type: "tool_result", text: msg, isError: true });
           messages.push({ role: "tool", tool_call_id: c.call_id, content: `Error / 错误: ${msg}` });
         }

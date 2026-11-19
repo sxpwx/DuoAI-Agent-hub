@@ -368,7 +368,7 @@ export class VaultTools {
       }
       case "delete_note": {
         const f = this.getFile(safePath(args.path));
-        await this.app.vault.trash(f, true);
+        await this.app.fileManager.trashFile(f);
         return `已删除 ${f.path}（移入系统回收站，可恢复）`;
       }
       case "web_search": {
@@ -445,7 +445,7 @@ export class VaultTools {
 
   /** 依据 Obsidian 附件文件夹设置解析目标目录 */
   private attachmentFolder(notePath: string): string {
-    const cfg = String((this.app.vault as any).getConfig?.("attachmentFolderPath") ?? "attachments");
+    const cfg = String((this.app.vault as unknown as { getConfig?: (key: string) => unknown }).getConfig?.("attachmentFolderPath") ?? "attachments");
     const noteDir = notePath.includes("/") ? notePath.slice(0, notePath.lastIndexOf("/")) : "";
     let folder: string;
     if (cfg.startsWith("./")) folder = normalizePath([noteDir, cfg.slice(2)].filter(Boolean).join("/"));

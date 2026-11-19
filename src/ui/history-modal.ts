@@ -38,13 +38,15 @@ export class HistoryModal extends Modal {
         this.actions.open(c);
       });
       const del = btns.createEl("button", { text: t("delete") });
-      del.addEventListener("click", async () => {
-        await this.actions.remove(c.id);
-        row.remove();
-        new Notice(t("deleted"));
-        if (!list.children.length) {
-          list.createDiv({ cls: "ah-setting-desc", text: t("historyEmptyAfterDelete") });
-        }
+      del.addEventListener("click", () => {
+        void (async () => {
+          await this.actions.remove(c.id);
+          row.remove();
+          new Notice(t("deleted"));
+          if (!list.children.length) {
+            list.createDiv({ cls: "ah-setting-desc", text: t("historyEmptyAfterDelete") });
+          }
+        })();
       });
     }
   }

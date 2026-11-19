@@ -6,6 +6,7 @@ import { fetchDynamicModels } from "../agents/models";
 import { oauthAuthorize } from "../agents/oauth";
 import { codebuddyLogin } from "../agents/codebuddy-auth";
 import { t } from "../i18n";
+import { rec } from "../agents/guards";
 
 export interface LoginDeps {
   credentials: Record<string, AgentCredential>;
@@ -57,8 +58,8 @@ export class LoginModal extends Modal {
     this.retryBtn = btns.createEl("button", { text: t("retry") });
     this.retryBtn.hide();
     this.retryBtn.addEventListener("click", () => {
-      if (this.spec.kind === "native" && this.spec.protocol === "cosy") this.beginDevice();
-      else if (this.spec.kind === "cli" && (this.spec as CliAgentSpec).login?.custom === "codebuddy-daemon") this.beginCodebuddy();
+      if (this.spec.kind === "native" && this.spec.protocol === "cosy") void this.beginDevice();
+      else if (this.spec.kind === "cli" && (this.spec as CliAgentSpec).login?.custom === "codebuddy-daemon") void this.beginCodebuddy();
       else if (this.spec.kind === "cli") this.beginRepl();
     });
     const cancel = btns.createEl("button", { text: t("cancel") });
@@ -75,24 +76,26 @@ export class LoginModal extends Modal {
     const spec = this.spec as NativeAgentSpec;
     contentEl.createEl("p", { cls: "ah-confirm-hint", text: t("deviceHint", { agent: spec.label }) });
     const start = contentEl.createEl("button", { text: t("openBrowser"), cls: "mod-cta" });
-    start.addEventListener("click", () => this.beginDevice());
+    start.addEventListener("click", () => { void this.beginDevice(); });
     if (spec.cred === "device+pat") {
       const box = contentEl.createDiv({ cls: "ah-login-pat" });
       box.createEl("p", { cls: "ah-confirm-hint", text: t("patHint") });
       const row = box.createDiv({ cls: "ah-login-pat-row" });
       const input = row.createEl("input", { type: "password", placeholder: "pt-…" });
       const save = row.createEl("button", { text: t("verifySave") });
-      save.addEventListener("click", async () => {
-        const pat = input.value.trim();
-        if (!pat) return new Notice(t("pastePatFirst"));
-        save.setText(t("verifying"));
-        try {
-          await cosyPatLogin(spec.site!, pat);
-          this.succeed();
-        } catch (e: any) {
-          this.statusEl.setText(String(e?.message ?? e));
-          save.setText(t("verifySave"));
-        }
+      save.addEventListener("click", () => {
+        void (async () => {
+          const pat = input.value.trim();
+          if (!pat) return new Notice(t("pastePatFirst"));
+          save.setText(t("verifying"));
+          try {
+            await cosyPatLogin(spec.site!, pat);
+            this.succeed();
+          } catch (e) {
+            this.statusEl.setText(String(rec(e).message ?? e));
+            save.setText(t("verifySave"));
+          }
+        })();
       });
     }
     this.beginDevice();
@@ -114,9 +117,9 @@ export class LoginModal extends Modal {
         () => this.settled
       );
       if (!this.settled) this.succeed();
-    } catch (e: any) {
+    } catch (e) {
       if (this.settled) return;
-      this.statusEl.setText(String(e?.message ?? e));
+      this.statusEl.setText(String(rec(e).message ?? e));
       this.retryBtn.show();
     }
   }
@@ -131,32 +134,34 @@ export class LoginModal extends Modal {
       const box = contentEl.createDiv({ cls: "ah-login-pat" });
       box.createEl("p", { cls: "ah-confirm-hint", text: t("oauthHint") });
       const btn = box.createEl("button", { text: t("browserLogin"), cls: "mod-cta" });
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        this.statusEl.setText(t("openingLogin"));
-        try {
-          const tokens = await oauthAuthorize(
-            spec.oauth!,
-            (url) => {
-              this.log(url);
-              window.open(url, "_blank");
-              this.statusEl.setText(t("browserOpened"));
-            },
-            () => this.settled
-          );
-          if (this.settled) return;
-          await this.deps.saveCredential(spec.id, {
-            ...cur,
-            oauthToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            expiresAt: tokens.expiresAt,
-          });
-          this.succeed();
-        } catch (e: any) {
-          if (this.settled) return;
-          this.statusEl.setText(String(e?.message ?? e));
-          btn.disabled = false;
-        }
+      btn.addEventListener("click", () => {
+        void (async () => {
+          btn.disabled = true;
+          this.statusEl.setText(t("openingLogin"));
+          try {
+            const tokens = await oauthAuthorize(
+              spec.oauth!,
+              (url) => {
+                this.log(url);
+                window.open(url, "_blank");
+                this.statusEl.setText(t("browserOpened"));
+              },
+              () => this.settled
+            );
+            if (this.settled) return;
+            await this.deps.saveCredential(spec.id, {
+              ...cur,
+              oauthToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken,
+              expiresAt: tokens.expiresAt,
+            });
+            this.succeed();
+          } catch (e) {
+            if (this.settled) return;
+            this.statusEl.setText(String(rec(e).message ?? e));
+            btn.disabled = false;
+          }
+        })();
       });
     }
     if (spec.id === "doubao") {
@@ -181,29 +186,33 @@ export class LoginModal extends Modal {
     if (spec.cred === "key+oauth") {
       const r2 = form.createDiv({ cls: "ah-login-pat-row" });
       const oauthBtn = r2.createEl("button", { text: t("readLocalClaude") });
-      oauthBtn.addEventListener("click", async () => {
-        const tk = readClaudeLocalOAuth();
-        if (!tk) {
-          this.statusEl.setText(t("noLocalClaude"));
-          return;
-        }
-        await this.deps.saveCredential(spec.id, { ...cur, oauthToken: tk });
-        this.statusEl.setText(t("oauthReadOk"));
-        await this.verify(spec, { ...cur, oauthToken: tk });
+      oauthBtn.addEventListener("click", () => {
+        void (async () => {
+          const tk = readClaudeLocalOAuth();
+          if (!tk) {
+            this.statusEl.setText(t("noLocalClaude"));
+            return;
+          }
+          await this.deps.saveCredential(spec.id, { ...cur, oauthToken: tk });
+          this.statusEl.setText(t("oauthReadOk"));
+          await this.verify(spec, { ...cur, oauthToken: tk });
+        })();
       });
     }
     const save = form.createEl("button", { text: t("verifySave"), cls: "mod-cta" });
-    save.addEventListener("click", async () => {
-      const cred: AgentCredential = {
-        ...cur,
-        apiKey: keyInput.value.trim(),
-        ...(baseInput ? { baseUrl: baseInput.value.trim() } : {}),
-      };
-      if (!cred.apiKey && !cred.oauthToken) return new Notice(t("fillKeyOrOauth"));
-      save.setText(t("verifying"));
-      await this.deps.saveCredential(spec.id, cred);
-      await this.verify(spec, cred);
-      save.setText(t("verifySave"));
+    save.addEventListener("click", () => {
+      void (async () => {
+        const cred: AgentCredential = {
+          ...cur,
+          apiKey: keyInput.value.trim(),
+          ...(baseInput ? { baseUrl: baseInput.value.trim() } : {}),
+        };
+        if (!cred.apiKey && !cred.oauthToken) return new Notice(t("fillKeyOrOauth"));
+        save.setText(t("verifying"));
+        await this.deps.saveCredential(spec.id, cred);
+        await this.verify(spec, cred);
+        save.setText(t("verifySave"));
+      })();
     });
     this.statusEl.setText(t("credHintDefault"));
   }
@@ -233,9 +242,9 @@ export class LoginModal extends Modal {
         () => this.settled
       );
       if (!this.settled) this.succeed();
-    } catch (e: any) {
+    } catch (e) {
       if (this.settled) return;
-      this.statusEl.setText(String(e?.message ?? e));
+      this.statusEl.setText(String(rec(e).message ?? e));
       this.retryBtn.show();
     }
   }

@@ -148,7 +148,7 @@ const D: Record<string, { zh: string; en: string }> = {
   patEmpty: { zh: "PAT 交换返回空令牌", en: "PAT exchange returned an empty token" },
   patNoUid: { zh: "PAT 登录成功但无法确定用户 id", en: "PAT sign-in succeeded but user id unknown" },
   // settings
-  settingsTitle: { zh: "Agent Hub 设置", en: "Agent Hub settings" },
+  settingsTitle: { zh: "DuoAI-Agent-hub 设置", en: "DuoAI-Agent-hub settings" },
   permMode: { zh: "权限模式", en: "Permission mode" },
   permModeDesc: {
     zh: "默认：读取免确认，写入需确认，删除强确认。最高权限：所有操作直接执行（仍仅限 vault 内）。",

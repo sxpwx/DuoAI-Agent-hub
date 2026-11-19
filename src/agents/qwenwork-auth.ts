@@ -5,6 +5,7 @@ import * as path from "path";
 import { requestUrl } from "obsidian";
 import { COSY_SITES, CosyCred } from "./qwenwork-chat";
 import { t } from "../i18n";
+import { rec, str } from "./guards";
 
 /**
  * COSY 站点（千问办公 / Qoder CN）登录：PKCE 设备流 + PAT 交换。
@@ -32,10 +33,12 @@ function clientHeaders(siteId: string): Record<string, string> {
   };
 }
 
-function deviceExpiry(dt: any): number {
-  const at = Date.parse(String(dt?.expires_at ?? "").trim());
+function deviceExpiry(dt: unknown): number {
+  const d = rec(dt);
+  const at = Date.parse(String(d.expires_at ?? "").trim());
   if (!isNaN(at)) return at;
-  if (dt?.expires_in > 0) return Date.now() + dt.expires_in * 1000;
+  const ei = Number(d.expires_in);
+  if (ei > 0) return Date.now() + ei * 1000;
   return Date.now() + 24 * 3600 * 1000;
 }
 
@@ -53,7 +56,7 @@ async function openapi(siteId: string, p: string, opts: { method?: string; token
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     throw: false,
   });
-  return { status: r.status, json: r.json as any, text: r.text };
+  return { status: r.status, json: r.json as unknown, text: r.text };
 }
 
 /** 设备流登录：回调授权 URL（调用方打开浏览器），轮询直至成功/超时/取消 */
@@ -79,49 +82,53 @@ export async function cosyDeviceLogin(
   onUrl(`${site.openapi}/device/selectAccounts?${q.toString()}`);
 
   const until = Date.now() + timeoutMs;
-  let dt: any = null;
+  let dt: Record<string, unknown> | null = null;
   while (Date.now() < until) {
     if (isCancelled()) throw new Error(t("loginCancelled"));
     try {
       const r = await openapi(siteId, "/api/v1/deviceToken/poll", { query: { nonce, verifier, challenge_method: "S256" } });
-      if (r.status === 200 && String(r.json?.token ?? "").trim()) {
-        dt = r.json;
+      const j = rec(r.json);
+      if (r.status === 200 && String(j.token ?? "").trim()) {
+        dt = j;
         break;
       }
     } catch {
       /* 网络抖动：继续轮询 */
     }
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => window.setTimeout(r, 2000));
   }
   if (!dt) throw new Error(t("loginTimeout"));
 
   // Qoder CN 优先换 job token；千问办公设备令牌即聊天令牌
-  let access = dt.token;
-  let refresh = dt.refresh_token ?? "";
+  let access = str(dt.token);
+  let refresh = str(dt.refresh_token);
   let expires = deviceExpiry(dt);
   if (!site.deviceOnly) {
     try {
-      const jr = await openapi(siteId, "/api/v1/me/jobToken", { method: "POST", token: dt.token, body: { clientId: site.clientId } });
-      if (jr.status === 200 && String(jr.json?.token ?? "").trim()) {
-        access = jr.json.token;
-        refresh = jr.json.refresh_token ?? refresh;
-        expires = deviceExpiry(jr.json);
+      const jr = await openapi(siteId, "/api/v1/me/jobToken", { method: "POST", token: str(dt.token), body: { clientId: site.clientId } });
+      const jj = rec(jr.json);
+      if (jr.status === 200 && String(jj.token ?? "").trim()) {
+        access = str(jj.token);
+        refresh = str(jj.refresh_token ?? refresh);
+        expires = deviceExpiry(jj);
       }
     } catch {
       /* 回退设备令牌 */
     }
   }
 
-  let uid = dt.user_id;
+  let uid: unknown = dt.user_id;
   let email = "";
   let name = "";
   try {
-    const ui = await openapi(siteId, site.userInfoPath, { token: dt.token });
+    const ui = await openapi(siteId, site.userInfoPath, { token: str(dt.token) });
     if (ui.status >= 200 && ui.status < 300) {
-      const user = (ui.json?.data ?? ui.json)?.user ?? (ui.json?.data ?? ui.json);
-      email = user?.email ?? "";
-      name = user?.name ?? "";
-      uid = String(user?.id ?? user?.user_id ?? user?.uid ?? uid ?? "") || undefined;
+      const uj = rec(ui.json);
+      const base = uj.data ?? uj;
+      const user = rec(rec(base).user ?? base);
+      email = str(user.email);
+      name = str(user.name);
+      uid = String(user.id ?? user.user_id ?? user.uid ?? uid ?? "") || undefined;
     }
   } catch {
     /* 用户信息可选 */
@@ -137,10 +144,10 @@ export async function cosyDeviceLogin(
     accountId: email || uid || name || dt.user_id,
     uid,
     email,
-    name: name || dt.user_name || "",
+    name: name || str(dt.user_name),
     machineId,
     deviceToken: dt.token,
-    deviceRefresh: dt.refresh_token ?? "",
+    deviceRefresh: str(dt.refresh_token),
   } as CosyCred;
   writeCosyCred(siteId, cred);
   return cred;
@@ -151,7 +158,8 @@ export async function cosyPatLogin(siteId: string, pat: string): Promise<CosyCre
   const site = COSY_SITES[siteId];
   const r = await openapi(siteId, "/api/v1/jobToken/exchange", { method: "POST", body: { personal_token: pat } });
   if (r.status !== 200) throw new Error(t("patExchangeFail", { agent: site.name, status: r.status }));
-  const token = String(r.json?.token ?? r.json?.job_token ?? "").trim();
+  const j = rec(r.json);
+  const token = String(j.token ?? j.job_token ?? "").trim();
   if (!token) throw new Error(t("patEmpty"));
   let uid = "";
   let email = "";
@@ -159,9 +167,10 @@ export async function cosyPatLogin(siteId: string, pat: string): Promise<CosyCre
   try {
     const ui = await openapi(siteId, "/api/v1/userinfo", { token });
     if (ui.status >= 200 && ui.status < 300) {
-      email = ui.json?.email ?? "";
-      name = ui.json?.name ?? "";
-      uid = String(ui.json?.id ?? ui.json?.user_id ?? ui.json?.uid ?? "");
+      const uj = rec(ui.json);
+      email = str(uj.email);
+      name = str(uj.name);
+      uid = String(uj.id ?? uj.user_id ?? uj.uid ?? "");
     }
   } catch {
     /* 可选 */
@@ -170,8 +179,8 @@ export async function cosyPatLogin(siteId: string, pat: string): Promise<CosyCre
   const cred: CosyCred = {
     type: "oauth",
     access: token,
-    refresh: String(r.json?.refresh_token ?? ""),
-    expires: deviceExpiry(r.json),
+    refresh: String(j.refresh_token ?? ""),
+    expires: deviceExpiry(j),
     accountId: email || uid,
     uid,
     email,
@@ -188,11 +197,12 @@ export async function cosyPatLogin(siteId: string, pat: string): Promise<CosyCre
 
 export function readCosyCred(siteId: string): CosyCred | null {
   try {
-    const all = JSON.parse(fs.readFileSync(authFile(), "utf8"));
-    const c = all?.[siteId];
-    if (!c) return null;
-    const v1 = c.metadata?.v1 ?? c;
-    if (!v1?.access || !v1?.uid || !v1?.machineId) return null;
+    const all = rec(JSON.parse(fs.readFileSync(authFile(), "utf8")));
+    const cv = all[siteId];
+    if (!cv) return null;
+    const c = rec(cv);
+    const v1 = rec(rec(c.metadata).v1 ?? c);
+    if (!v1.access || !v1.uid || !v1.machineId) return null;
     return v1 as CosyCred;
   } catch {
     return null;
@@ -204,7 +214,7 @@ export function writeCosyCred(siteId: string, cred: CosyCred): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   let all: Record<string, unknown> = {};
   try {
-    all = JSON.parse(fs.readFileSync(file, "utf8"));
+    all = rec(JSON.parse(fs.readFileSync(file, "utf8")));
   } catch {
     /* 新建 */
   }
@@ -216,13 +226,13 @@ export function writeCosyCred(siteId: string, cred: CosyCred): void {
 export function repairLegacyCreds(): void {
   try {
     const file = authFile();
-    const all = JSON.parse(fs.readFileSync(file, "utf8"));
+    const all = rec(JSON.parse(fs.readFileSync(file, "utf8")));
     let changed = false;
     for (const k of Object.keys(all)) {
-      const c = all[k];
-      const v1 = c?.metadata?.v1;
-      if (v1 && !c.uid && v1.uid) {
-        all[k] = { ...v1, ...c, metadata: { v1 } };
+      const c = rec(all[k]);
+      const v1 = rec(c.metadata).v1;
+      if (v1 && !c.uid && rec(v1).uid) {
+        all[k] = { ...rec(v1), ...c, metadata: { v1 } };
         changed = true;
       }
     }
@@ -235,9 +245,9 @@ export function repairLegacyCreds(): void {
 /** 读取本机 Claude Code 的 OAuth 登录态（若存在） */
 export function readClaudeLocalOAuth(): string | null {
   try {
-    const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude", ".credentials.json"), "utf8"));
-    const t = j?.claudeAiOauth?.accessToken;
-    return typeof t === "string" && t ? t : null;
+    const j = rec(JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude", ".credentials.json"), "utf8")));
+    const tk = rec(j.claudeAiOauth).accessToken;
+    return typeof tk === "string" && tk ? tk : null;
   } catch {
     return null;
   }

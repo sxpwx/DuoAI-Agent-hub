@@ -6,6 +6,7 @@ import * as crypto from "crypto";
 import { CliAgentSpec, RunContext } from "../types";
 import { resolveCli } from "./detect";
 import { t } from "../i18n";
+import { arr, rec, str } from "./guards";
 
 /** Windows 下杀整棵进程树（CLI 会派生 MCP 等子进程，单杀父进程会留下占用管道的孤儿） */
 function killTree(child: ChildProcess) {
@@ -83,8 +84,8 @@ function attempt(
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],
       });
-    } catch (e: any) {
-      ctx.onEvent({ type: "error", text: `启动失败：${e?.message ?? e}` });
+    } catch (e) {
+      ctx.onEvent({ type: "error", text: `启动失败：${rec(e).message ?? e}` });
       resolve(true);
       return;
     }
@@ -123,8 +124,8 @@ function attempt(
       resolve(retryable);
     };
 
-    child.on("error", (e: any) => {
-      ctx.onEvent({ type: "error", text: `启动失败：${e?.message ?? e}（路径：${exe}）` });
+    child.on("error", (e: unknown) => {
+      ctx.onEvent({ type: "error", text: `启动失败：${rec(e).message ?? e}（路径：${exe}）` });
       finish(false);
     });
 
@@ -140,7 +141,7 @@ function attempt(
         const line = stdoutBuf.slice(0, idx).trim();
         stdoutBuf = stdoutBuf.slice(idx + 1);
         if (!line) continue;
-        let obj: any;
+        let obj: unknown;
         try {
           obj = JSON.parse(line);
         } catch {
@@ -198,27 +199,30 @@ function attempt(
   });
 }
 
-function mapClaude(obj: any, ctx: RunContext, state: AttemptResult) {
-  switch (obj?.type) {
+function mapClaude(obj: unknown, ctx: RunContext, state: AttemptResult) {
+  const o = rec(obj);
+  switch (o.type) {
     case "system":
-      if (obj.subtype === "init") {
-        ctx.onEvent({ type: "status", text: t("sessionInit") + (obj.model ? t("sessionModel", { model: obj.model }) : "") });
+      if (o.subtype === "init") {
+        ctx.onEvent({ type: "status", text: t("sessionInit") + (o.model ? t("sessionModel", { model: String(o.model) }) : "") });
       }
       break;
     case "assistant":
-      for (const c of obj.message?.content ?? []) {
-        if (c.type === "text" && c.text) ctx.onEvent({ type: "text", text: c.text });
-        else if (c.type === "tool_use") ctx.onEvent({ type: "tool_use", name: shortTool(c.name), args: c.input ?? {} });
+      for (const cRaw of arr(rec(o.message).content)) {
+        const c = rec(cRaw);
+        if (c.type === "text" && c.text) ctx.onEvent({ type: "text", text: str(c.text) });
+        else if (c.type === "tool_use") ctx.onEvent({ type: "tool_use", name: shortTool(str(c.name)), args: rec(c.input) });
       }
       break;
     case "user":
-      for (const c of obj.message?.content ?? []) {
+      for (const cRaw of arr(rec(o.message).content)) {
+        const c = rec(cRaw);
         if (c.type === "tool_result") {
           const text =
             typeof c.content === "string"
               ? c.content
               : Array.isArray(c.content)
-                ? c.content.map((x: any) => x?.text ?? "").join("\n")
+                ? c.content.map((x: unknown) => str(rec(x).text)).join("\n")
                 : "";
           ctx.onEvent({ type: "tool_result", text: clip(text), isError: !!c.is_error });
         }
@@ -226,10 +230,10 @@ function mapClaude(obj: any, ctx: RunContext, state: AttemptResult) {
       break;
     case "result": {
       state.sawResult = true;
-      if (obj.subtype === "success" && !obj.is_error) {
-        ctx.onEvent({ type: "done", text: obj.result ?? "" });
+      if (o.subtype === "success" && !o.is_error) {
+        ctx.onEvent({ type: "done", text: str(o.result) });
       } else {
-        let text = obj.result ?? obj.error ?? t("execFailed");
+        let text = String(o.result ?? o.error ?? t("execFailed"));
         if (/not logged in|please run \/login|login required/i.test(text)) {
           text += t("cliNotLoggedHint");
         }
@@ -240,43 +244,45 @@ function mapClaude(obj: any, ctx: RunContext, state: AttemptResult) {
   }
 }
 
-function mapCodex(obj: any, ctx: RunContext, state: AttemptResult, lastText: string): string {
-  const t = obj?.type;
-  if (t === "item.completed" || t === "item.updated") {
-    const it = obj.item ?? {};
+function mapCodex(obj: unknown, ctx: RunContext, state: AttemptResult, lastText: string): string {
+  const o = rec(obj);
+  const ty = o.type;
+  if (ty === "item.completed" || ty === "item.updated") {
+    const it = rec(o.item);
     const kind = it.item_type ?? it.type;
-    if (kind === "agent_message" && it.text && t === "item.completed") {
-      ctx.onEvent({ type: "text", text: it.text });
-      return it.text;
+    if (kind === "agent_message" && it.text && ty === "item.completed") {
+      ctx.onEvent({ type: "text", text: str(it.text) });
+      return str(it.text);
     }
     if (kind === "mcp_tool_call" || kind === "function_call") {
-      if (t === "item.completed" || it.status === "in_progress") {
-        ctx.onEvent({ type: "tool_use", name: shortTool(it.tool ?? it.name), args: it.arguments ?? {} });
+      if (ty === "item.completed" || it.status === "in_progress") {
+        ctx.onEvent({ type: "tool_use", name: shortTool(str(it.tool ?? it.name)), args: (it.arguments ?? {}) as Record<string, unknown> });
       }
-      if (it.result !== undefined && t === "item.completed") {
+      if (it.result !== undefined && ty === "item.completed") {
         ctx.onEvent({ type: "tool_result", text: clip(String(it.result)), isError: it.status === "failed" });
       }
     }
     return lastText;
   }
-  if (t === "turn.completed") {
+  if (ty === "turn.completed") {
     state.sawResult = true;
     ctx.onEvent({ type: "done", text: lastText });
     return lastText;
   }
-  if (t === "error" || t === "turn.failed") {
+  if (ty === "error" || ty === "turn.failed") {
     state.sawResult = true;
-    ctx.onEvent({ type: "error", text: obj.message ?? obj.error?.message ?? "执行失败" });
+    ctx.onEvent({ type: "error", text: str(o.message ?? rec(o.error).message ?? "执行失败") });
     return lastText;
   }
   // 旧版协议
-  if (obj?.msg?.type === "agent_message" && obj.msg.message) {
-    ctx.onEvent({ type: "text", text: obj.msg.message });
-    return obj.msg.message;
+  const msg = rec(o.msg);
+  if (msg.type === "agent_message" && msg.message) {
+    ctx.onEvent({ type: "text", text: str(msg.message) });
+    return str(msg.message);
   }
-  if (obj?.msg?.type === "task_complete") {
+  if (msg.type === "task_complete") {
     state.sawResult = true;
-    ctx.onEvent({ type: "done", text: obj.msg.last_agent_message ?? lastText });
+    ctx.onEvent({ type: "done", text: str(msg.last_agent_message ?? lastText) });
   }
   return lastText;
 }

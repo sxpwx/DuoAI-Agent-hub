@@ -1,6 +1,7 @@
 import * as crypto from "crypto";
 import * as http from "http";
 import { AddressInfo } from "net";
+import { rec, str } from "./guards";
 
 /**
  * 通用 OAuth2 PKCE 授权（浏览器弹窗 + 本地回环回调），
@@ -127,11 +128,11 @@ async function exchange(p: OAuthProvider, code: string, verifier: string, state:
       state,
     }),
   });
-  const j: any = await r.json().catch(() => ({}));
+  const j = rec(await r.json().catch(() => ({})));
   if (!r.ok || !j.access_token) throw new Error(`OAuth token exchange failed / 令牌交换失败 HTTP ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
   return {
-    accessToken: j.access_token,
-    refreshToken: j.refresh_token ?? "",
+    accessToken: str(j.access_token),
+    refreshToken: str(j.refresh_token),
     expiresAt: Date.now() + (Number(j.expires_in) || 3600) * 1000,
   };
 }
@@ -144,11 +145,11 @@ export async function oauthRefresh(providerId: string, refreshToken: string): Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: p.clientId }),
   });
-  const j: any = await r.json().catch(() => ({}));
+  const j = rec(await r.json().catch(() => ({})));
   if (!r.ok || !j.access_token) throw new Error(`OAuth refresh failed / 刷新失败 HTTP ${r.status}`);
   return {
-    accessToken: j.access_token,
-    refreshToken: j.refresh_token ?? refreshToken,
+    accessToken: str(j.access_token),
+    refreshToken: typeof j.refresh_token === "string" ? j.refresh_token : refreshToken,
     expiresAt: Date.now() + (Number(j.expires_in) || 3600) * 1000,
   };
 }

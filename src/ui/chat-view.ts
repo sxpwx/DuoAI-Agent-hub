@@ -6,6 +6,7 @@ import { readCosyCred } from "../agents/qwenwork-auth";
 import { AgentEvent, AgentSpec, CliAgentSpec, Conversation, NativeAgentSpec, StoredMessage } from "../types";
 import { summarize, toolTier } from "../bridge/tools";
 import { t } from "../i18n";
+import { rec } from "../agents/guards";
 import { HistoryModal } from "./history-modal";
 import { LoginModal } from "./login-modal";
 import type AgentHubPlugin from "../main";
@@ -21,7 +22,7 @@ export class ChatView extends ItemView {
   private inputEl!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
   private abort: AbortController | null = null;
-  private lastBubble: { el: HTMLElement; raw: string } | null = null;
+  private lastBubble: { el: HTMLElement; raw: string; msg?: StoredMessage } | null = null;
   private lastToolCard: HTMLElement | null = null;
   private lastToolMsg: StoredMessage | null = null;
   private renderTimer: number | null = null;
@@ -41,7 +42,7 @@ export class ChatView extends ItemView {
     return VIEW_TYPE;
   }
   getDisplayText() {
-    return "Agent Hub";
+    return "DuoAI-Agent-hub";
   }
   getIcon() {
     return "bot";
@@ -58,24 +59,28 @@ export class ChatView extends ItemView {
       this.agentSelect.createEl("option", { value: a.id, text: a.label });
     }
     this.agentSelect.value = this.plugin.settings.selectedAgent;
-    this.agentSelect.addEventListener("change", async () => {
-      this.plugin.settings.selectedAgent = this.agentSelect.value;
-      await this.plugin.saveSettings();
-      await this.refreshModels();
-      this.updateStatus();
+    this.agentSelect.addEventListener("change", () => {
+      void (async () => {
+        this.plugin.settings.selectedAgent = this.agentSelect.value;
+        await this.plugin.saveSettings();
+        await this.refreshModels();
+        this.updateStatus();
+      })();
     });
 
     this.modelSelect = header.createEl("select", { cls: "ah-model-select" });
     const refreshBtn = header.createEl("button", { cls: "ah-icon-btn", text: "↻", attr: { "aria-label": t("refreshModels") } });
-    refreshBtn.addEventListener("click", () => this.refreshModels(true));
+    refreshBtn.addEventListener("click", () => { void this.refreshModels(true); });
 
     this.permBtn = header.createEl("button", { cls: "ah-perm-btn" });
-    this.permBtn.addEventListener("click", async () => {
-      const s = this.plugin.settings;
-      s.permissionMode = s.permissionMode === "confirm" ? "full" : "confirm";
-      await this.plugin.saveSettings();
-      this.updatePermBtn();
-      new Notice(s.permissionMode === "full" ? t("permFullNotice") : t("permConfirmNotice"));
+    this.permBtn.addEventListener("click", () => {
+      void (async () => {
+        const s = this.plugin.settings;
+        s.permissionMode = s.permissionMode === "confirm" ? "full" : "confirm";
+        await this.plugin.saveSettings();
+        this.updatePermBtn();
+        new Notice(s.permissionMode === "full" ? t("permFullNotice") : t("permConfirmNotice"));
+      })();
     });
     this.updatePermBtn();
 
@@ -94,15 +99,17 @@ export class ChatView extends ItemView {
     });
 
     const histBtn = header.createEl("button", { cls: "ah-icon-btn", text: t("history"), attr: { "aria-label": t("history") } });
-    histBtn.addEventListener("click", async () => {
-      const all = await this.plugin.loadHistory();
-      new HistoryModal(this.app, all, {
-        open: (c) => this.loadConversation(c),
-        remove: async (id) => {
-          await this.plugin.deleteConversation(id);
-          if (this.conv?.id === id) this.conv = null;
-        },
-      }).open();
+    histBtn.addEventListener("click", () => {
+      void (async () => {
+        const all = await this.plugin.loadHistory();
+        new HistoryModal(this.app, all, {
+          open: (c) => this.loadConversation(c),
+          remove: async (id) => {
+            await this.plugin.deleteConversation(id);
+            if (this.conv?.id === id) this.conv = null;
+          },
+        }).open();
+      })();
     });
 
     const newBtn = header.createEl("button", { cls: "ah-icon-btn", text: "＋", attr: { "aria-label": t("newSession") } });
@@ -123,7 +130,7 @@ export class ChatView extends ItemView {
     this.showEmpty();
     this.registerDomEvent(this.messagesEl, "contextmenu", (e: MouseEvent) => {
       e.preventDefault();
-      const sel = window.getSelection()?.toString() ?? "";
+      const sel = this.containerEl.ownerDocument.getSelection()?.toString() ?? "";
       const msgEl = (e.target as HTMLElement).closest(".ah-msg, .ah-tool") as HTMLElement | null;
       const menu = new Menu();
       if (sel.trim()) {
@@ -442,8 +449,8 @@ export class ChatView extends ItemView {
 
     try {
       await this.plugin.runAgent(conv.agentId, conv.model, contextPrompt, (e) => this.onEvent(e), this.abort.signal);
-    } catch (e: any) {
-      this.addError(t("runException", { err: String(e?.message ?? e) }));
+    } catch (e) {
+      this.addError(t("runException", { err: String(rec(e).message ?? e) }));
     } finally {
       this.abort = null;
       this.sendBtn.setText(t("send"));
@@ -551,10 +558,10 @@ export class ChatView extends ItemView {
       // 记录到会话
       const msg: StoredMessage = { role: "assistant", text: "", ts: Date.now() };
       this.pushMsg(msg);
-      (bubble as any).msg = msg;
+      bubble.msg = msg;
     }
     this.lastBubble.raw += text;
-    const msg = (this.lastBubble as any).msg as StoredMessage | undefined;
+    const msg = this.lastBubble.msg;
     if (msg) msg.text = this.lastBubble.raw;
     this.scheduleRender();
     this.scrollDown();

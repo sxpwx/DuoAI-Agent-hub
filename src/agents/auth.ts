@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from "child_process";
 import { CliAgentSpec } from "../types";
 import { resolveCli } from "./detect";
+import { rec } from "./guards";
 
 /** 查询 CLI 登录状态：true 已登录 / false 未登录 / null 无法判断 */
 export function checkLogin(spec: CliAgentSpec, cliPath: string, env?: Record<string, string>): Promise<boolean | null> {
@@ -23,17 +24,17 @@ export function checkLogin(spec: CliAgentSpec, cliPath: string, env?: Record<str
       return resolve(null);
     }
     let out = "";
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       child.kill();
       resolve(null);
     }, 20000);
     child.stdout?.on("data", (d: Buffer) => (out += d.toString()));
     child.on("error", () => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       resolve(null);
     });
     child.on("close", () => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       resolve(spec.login!.parse(out));
     });
   });
@@ -92,7 +93,7 @@ export function startLogin(
     }
   }
   const done = new Promise<{ code: number | null; output: string }>((resolve) => {
-    child.on("error", (e: any) => resolve({ code: -1, output: String(e?.message ?? e) }));
+    child.on("error", (e: unknown) => resolve({ code: -1, output: String(rec(e).message ?? e) }));
     child.on("close", (code) => resolve({ code, output }));
   });
   return {

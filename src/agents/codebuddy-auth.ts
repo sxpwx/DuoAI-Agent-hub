@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { spawn, spawnSync } from "child_process";
 import { resolveCli, whichSync } from "./detect";
+import { rec, str } from "./guards";
 
 /**
  * WorkBuddy（codebuddy）应用内一键登录：
@@ -27,8 +28,8 @@ function cliPath(): string | null {
 
 function gatewayPassword(): string | null {
   try {
-    const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".codebuddy", "settings.json"), "utf8"));
-    const pw = j?.gateway?.password;
+    const j = rec(JSON.parse(fs.readFileSync(path.join(os.homedir(), ".codebuddy", "settings.json"), "utf8")));
+    const pw = rec(j.gateway).password;
     return typeof pw === "string" && pw ? pw : null;
   } catch {
     return null;
@@ -53,8 +54,8 @@ function runCli(args: string[], timeoutMs = 30000): string {
 export function ensureDaemon(): string | null {
   const status = runCli(["daemon", "status"]);
   try {
-    const j = JSON.parse(status.slice(status.indexOf("{")));
-    if (j.status === "running" && j.endpoint) return j.endpoint as string;
+    const j = rec(JSON.parse(status.slice(status.indexOf("{"))));
+    if (j.status === "running" && j.endpoint) return str(j.endpoint);
   } catch {
     /* fallthrough */
   }
@@ -62,8 +63,8 @@ export function ensureDaemon(): string | null {
   const m = out.match(/https?:\/\/127\.0\.0\.1:\d+/);
   if (m) return m[0];
   try {
-    const j = JSON.parse(runCli(["daemon", "status"]).slice(status.indexOf("{")));
-    if (j.status === "running" && j.endpoint) return j.endpoint as string;
+    const j = rec(JSON.parse(runCli(["daemon", "status"]).slice(status.indexOf("{"))));
+    if (j.status === "running" && j.endpoint) return str(j.endpoint);
   } catch {
     /* ignore */
   }
@@ -81,17 +82,18 @@ export async function codebuddyAuthStatus(): Promise<boolean | null> {
   const status = runCli(["daemon", "status"]);
   let endpoint: string | null = null;
   try {
-    const j = JSON.parse(status.slice(status.indexOf("{")));
-    if (j.status === "running" && j.endpoint) endpoint = j.endpoint;
+    const j = rec(JSON.parse(status.slice(status.indexOf("{"))));
+    if (j.status === "running" && j.endpoint) endpoint = str(j.endpoint);
   } catch {
     /* ignore */
   }
   if (!endpoint) return false;
   try {
     const r = await fetch(endpoint + "/api/v1/auth/account/status", { headers: headers(pw), signal: AbortSignal.timeout(8000) });
-    const j: any = await r.json();
-    if (j?.data?.authenticated === true) return true;
-    if (j?.data?.authenticated === false) return false;
+    const j = rec(await r.json());
+    const d = rec(j.data);
+    if (d.authenticated === true) return true;
+    if (d.authenticated === false) return false;
     return null;
   } catch {
     return null;
@@ -110,11 +112,11 @@ export async function codebuddyStartLogin(method = "internal"): Promise<string> 
     body: JSON.stringify({ method }),
     signal: AbortSignal.timeout(30000),
   });
-  const j: any = await r.json().catch(() => ({}));
-  const d = j?.data ?? j;
-  if (!r.ok || d?.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
-  if (!d?.authUrl) throw new Error("守护进程未返回授权 URL / daemon returned no authUrl");
-  return d.authUrl as string;
+  const j = rec(await r.json().catch(() => ({})));
+  const d = rec(j.data ?? j);
+  if (!r.ok || d.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
+  if (!d.authUrl) throw new Error("守护进程未返回授权 URL / daemon returned no authUrl");
+  return str(d.authUrl);
 }
 
 /** 一键登录：发起授权 → 回调 URL（调用方打开浏览器）→ 轮询直至完成 */
@@ -134,21 +136,23 @@ export async function codebuddyLogin(
     body: JSON.stringify({ method }),
     signal: AbortSignal.timeout(30000),
   });
-  const j: any = await r.json().catch(() => ({}));
-  const d = j?.data ?? j;
-  if (!r.ok || d?.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
-  if (d?.authUrl) onUrl(d.authUrl);
+  const j = rec(await r.json().catch(() => ({})));
+  const d = rec(j.data ?? j);
+  if (!r.ok || d.success === false) throw new Error(`登录发起失败 / login start failed: ${JSON.stringify(j).slice(0, 200)}`);
+  if (d.authUrl) onUrl(str(d.authUrl));
   const until = Date.now() + timeoutMs;
   while (Date.now() < until) {
     if (isCancelled()) throw new Error("cancelled");
-    await new Promise((res) => setTimeout(res, 2000));
+    await new Promise((res) => window.setTimeout(res, 2000));
     try {
       const s = await fetch(endpoint + "/api/v1/auth/account/status", { headers: headers(pw), signal: AbortSignal.timeout(8000) });
-      const sj: any = await s.json();
-      if (sj?.data?.authenticated === true) return;
-      if (typeof sj?.data?.loginError === "string" && sj.data.loginError) throw new Error(sj.data.loginError);
-    } catch (e: any) {
-      if (e?.message && !/fetch|network|timeout|aborted/i.test(e.message)) throw e;
+      const sj = rec(await s.json());
+      const sd = rec(sj.data);
+      if (sd.authenticated === true) return;
+      if (typeof sd.loginError === "string" && sd.loginError) throw new Error(sd.loginError);
+    } catch (e) {
+      const em = rec(e).message;
+      if (em && !/fetch|network|timeout|aborted/i.test(String(em))) throw e;
     }
   }
   throw new Error("登录超时（5 分钟）/ login timeout (5 min)");

@@ -1,4 +1,4 @@
-# Agent Hub（Obsidian 插件 / Obsidian Plugin）
+# DuoAI-Agent-hub（Obsidian 插件 / Obsidian Plugin）
 
 [中文](#中文) · [English](#english)
 
@@ -30,6 +30,13 @@ Agent 能力严格限制为「只能操作当前 vault」；默认**重要操作
 | Codex | 内置 OpenAI 协议；API Key | 动态 /v1/models（gpt-5-codex/gpt-5/o4-mini/…） |
 | 豆包办公 | 火山方舟 OpenAI 兼容协议；API Key | doubao-seed-1-6 系列等，可自填 |
 | 自定义 API | 任意 OpenAI 兼容（DeepSeek/Kimi/GLM/Ollama…） | 自填 |
+
+### 行为披露 / Behavior disclosures
+
+- **Vault 枚举 / Vault enumeration**：`list_notes`、`list_files`、`search_notes` 会枚举本地 vault 文件以支持搜索与整理（核心功能）。枚举仅在本机进行，**不会**将 vault 内容发送到作者服务器；仅在用户主动发起任务时触发。/ These tools enumerate local vault files to power search/organization (core feature). Enumeration happens on-device only, never sends vault content to author servers, and runs only when the user starts a task.
+- **网络请求 / Network requests**：仅连接以下端点，用途为模型推理与授权：`gateway.qwenwork.cn`（千问办公推理/设备流）、`openapi.qoder.com.cn` / `gateway.qoder.com.cn`（Qoder CN）、`api.anthropic.com` / `claude.ai` / `console.anthropic.com`（Claude 推理/OAuth）、`auth.openai.com` / `chatgpt.com`（Codex OAuth/推理）、`ark.cn-beijing.volces.com`（豆包）、`copilot.tencent.com` / `127.0.0.1:9527`（WorkBuddy 授权/本地守护进程）、`cn.bing.com` / `www.baidu.com`（web_search）、用户自定义 Base URL（自定义 API）、用户提供的图片/网页 URL（fetch_webpage / add_image_to_note）。不发送遥测。/ Only the endpoints listed are contacted, for model inference and authorization; no telemetry.
+- **剪贴板 / Clipboard**：仅在用户点击「复制」时写入剪贴板（navigator.clipboard.writeText），不读取剪贴板。/ Clipboard is written only when the user clicks Copy; never read.
+- **文件删除 / File deletion**：`delete_note` 经 `FileManager.trashFile()` 移入回收站（可恢复），且默认需用户强确认。/ Deletions go through FileManager.trashFile() (recoverable) and require explicit confirmation by default.
 
 ### 安全架构
 
@@ -101,6 +108,10 @@ Agent capabilities are strictly limited to "operate on the current vault only". 
 | Codex | Built-in OpenAI protocol; API Key | Live /v1/models (gpt-5-codex/gpt-5/o4-mini/…) |
 | Doubao | Volcano Ark OpenAI-compatible protocol; API Key | doubao-seed-1-6 family, customizable |
 | Custom API | Any OpenAI-compatible endpoint (DeepSeek/Kimi/GLM/Ollama…) | Custom |
+
+### Behavior disclosures (English summary)
+
+See the bilingual disclosure section above: vault enumeration is on-device only and task-triggered; network access is limited to the listed model/auth/search endpoints plus user-configured URLs; clipboard is write-only on user action; deletions use the recoverable trash with confirmation.
 
 ### Security model
 

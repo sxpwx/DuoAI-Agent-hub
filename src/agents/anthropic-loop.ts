@@ -1,6 +1,7 @@
 import { RunContext } from "../types";
 import { TOOL_DEFS } from "../bridge/tools";
 import { t } from "../i18n";
+import { num, rec, str } from "./guards";
 
 type ExecFn = (name: string, args: Record<string, unknown>) => Promise<string>;
 
@@ -8,6 +9,26 @@ export interface AnthropicAuth {
   baseUrl: string;
   apiKey?: string;
   oauthToken?: string;
+}
+
+interface ChatMessage {
+  role: string;
+  content?: unknown;
+}
+
+interface AssistantBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+}
+
+interface ToolResultBlock {
+  type: string;
+  tool_use_id?: string;
+  content: string;
+  is_error?: boolean;
 }
 
 function authHeaders(auth: AnthropicAuth): Record<string, string> {
@@ -41,7 +62,7 @@ export async function runAnthropicLoop(
     description: t.description,
     input_schema: t.inputSchema,
   }));
-  const messages: any[] = [{ role: "user", content: ctx.prompt }];
+  const messages: ChatMessage[] = [{ role: "user", content: ctx.prompt }];
   const endpoint = auth.baseUrl.replace(/\/+$/, "") + "/v1/messages";
 
   for (let iter = 1; ; iter++) {
@@ -62,9 +83,9 @@ export async function runAnthropicLoop(
         }),
         signal: ctx.signal,
       });
-    } catch (e: any) {
+    } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `网络请求失败：${e?.message ?? e}` });
+      ctx.onEvent({ type: "error", text: `网络请求失败：${rec(e).message ?? e}` });
       return;
     }
     if (res.status === 401 && onRefresh && auth.oauthToken) {
@@ -96,46 +117,53 @@ export async function runAnthropicLoop(
           const line = buf.slice(0, idx).trim();
           buf = buf.slice(idx + 1);
           if (!line.startsWith("data:")) continue;
-          let obj: any;
+          let obj: unknown;
           try {
             obj = JSON.parse(line.slice(5).trim());
           } catch {
             continue;
           }
-          if (obj.type === "content_block_start") {
-            const cb = obj.content_block ?? {};
-            blocks[obj.index] = { type: cb.type, id: cb.id, name: cb.name, args: "" };
-          } else if (obj.type === "content_block_delta") {
-            const d = obj.delta ?? {};
-            const b = blocks[obj.index];
+          const o = rec(obj);
+          if (o.type === "content_block_start") {
+            const cb = rec(o.content_block);
+            blocks[num(o.index)] = {
+              type: str(cb.type),
+              id: typeof cb.id === "string" ? cb.id : undefined,
+              name: typeof cb.name === "string" ? cb.name : undefined,
+              args: "",
+            };
+          } else if (o.type === "content_block_delta") {
+            const d = rec(o.delta);
+            const b = blocks[num(o.index)];
             if (!b) continue;
             if (d.type === "text_delta") {
-              content += d.text ?? "";
-              ctx.onEvent({ type: "text", text: d.text ?? "" });
+              content += str(d.text);
+              ctx.onEvent({ type: "text", text: str(d.text) });
             } else if (d.type === "input_json_delta") {
-              b.args += d.partial_json ?? "";
+              b.args += str(d.partial_json);
             }
-          } else if (obj.type === "message_delta") {
-            stopReason = obj.delta?.stop_reason ?? stopReason;
-          } else if (obj.type === "error") {
-            ctx.onEvent({ type: "error", text: String(obj.error?.message ?? "Anthropic 流错误") });
+          } else if (o.type === "message_delta") {
+            const sr = rec(o.delta).stop_reason;
+            stopReason = typeof sr === "string" ? sr : stopReason;
+          } else if (o.type === "error") {
+            ctx.onEvent({ type: "error", text: String(rec(o.error).message ?? "Anthropic 流错误") });
             return;
           }
         }
       }
-    } catch (e: any) {
+    } catch (e) {
       if (ctx.signal.aborted) return;
-      ctx.onEvent({ type: "error", text: `流读取中断：${e?.message ?? e}` });
+      ctx.onEvent({ type: "error", text: `流读取中断：${rec(e).message ?? e}` });
       return;
     }
 
     const toolBlocks = blocks.filter((b) => b?.type === "tool_use" && b.name);
     if (stopReason === "tool_use" && toolBlocks.length) {
-      const assistantContent: any[] = [];
+      const assistantContent: AssistantBlock[] = [];
       if (content) assistantContent.push({ type: "text", text: content });
       for (const b of toolBlocks) assistantContent.push({ type: "tool_use", id: b.id, name: b.name, input: safeParse(b.args) });
       messages.push({ role: "assistant", content: assistantContent });
-      const results: any[] = [];
+      const results: ToolResultBlock[] = [];
       for (const b of toolBlocks) {
         if (ctx.signal.aborted) return;
         const args = safeParse(b.args);
@@ -144,8 +172,8 @@ export async function runAnthropicLoop(
           const result = await execute(b.name!, args);
           ctx.onEvent({ type: "tool_result", text: result.slice(0, 600) });
           results.push({ type: "tool_result", tool_use_id: b.id, content: result });
-        } catch (e: any) {
-          const msg = String(e?.message ?? e);
+        } catch (e) {
+          const msg = String(rec(e).message ?? e);
           ctx.onEvent({ type: "tool_result", text: msg, isError: true });
           results.push({ type: "tool_result", tool_use_id: b.id, content: `错误：${msg}`, is_error: true });
         }
@@ -160,7 +188,7 @@ export async function runAnthropicLoop(
 
 function safeParse(s: string): Record<string, unknown> {
   try {
-    return JSON.parse(s || "{}");
+    return rec(JSON.parse(s || "{}"));
   } catch {
     return {};
   }

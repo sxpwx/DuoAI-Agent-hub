@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { rec } from "./guards";
 
 /** 桌面 GUI 可执行文件不能作为 CLI 使用 */
 export function isGuiExe(p: string): boolean {
@@ -183,8 +184,8 @@ export function installNpmPackage(pkg: string, onProgress?: (line: string) => vo
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, ...resolved.env },
       });
-    } catch (e: any) {
-      return resolve({ ok: false, tail: String(e?.message ?? e) });
+    } catch (e) {
+      return resolve({ ok: false, tail: String(rec(e).message ?? e) });
     }
     let tail = "";
     // 必须消费输出，否则管道缓冲区满会导致 npm 挂起
@@ -196,7 +197,7 @@ export function installNpmPackage(pkg: string, onProgress?: (line: string) => vo
     };
     child.stdout?.on("data", drain);
     child.stderr?.on("data", drain);
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       try {
         child.kill();
       } catch {
@@ -204,12 +205,12 @@ export function installNpmPackage(pkg: string, onProgress?: (line: string) => vo
       }
       resolve({ ok: false, tail: "安装超时（8 分钟）。" + tail });
     }, 8 * 60 * 1000);
-    child.on("error", (e: any) => {
-      clearTimeout(timer);
-      resolve({ ok: false, tail: String(e?.message ?? e) });
+    child.on("error", (e: unknown) => {
+      window.clearTimeout(timer);
+      resolve({ ok: false, tail: String(rec(e).message ?? e) });
     });
     child.on("close", (code: number | null) => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       resolve({ ok: code === 0, tail });
     });
   });

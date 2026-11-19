@@ -15,6 +15,7 @@ import { ChatView, VIEW_TYPE } from "./ui/chat-view";
 import { ConfirmModal } from "./ui/confirm-modal";
 import { AgentHubSettingTab } from "./settings";
 import { setLangOverride, t } from "./i18n";
+import { rec } from "./agents/guards";
 
 export default class AgentHubPlugin extends Plugin {
   declare settings: AgentHubSettings;
@@ -42,8 +43,8 @@ export default class AgentHubPlugin extends Plugin {
     );
     try {
       await this.bridge.start();
-    } catch (e: any) {
-      new Notice(t("bridgeFail", { err: String(e?.message ?? e) }));
+    } catch (e) {
+      new Notice(t("bridgeFail", { err: String(rec(e).message ?? e) }));
     }
 
     // 旧版凭据形态自动修复（兼容历史写入）
@@ -54,7 +55,7 @@ export default class AgentHubPlugin extends Plugin {
     }
 
     this.registerView(VIEW_TYPE, (leaf) => new ChatView(leaf, this));
-    this.addRibbonIcon("bot", "打开 Agent Hub", () => this.activateView());
+    this.addRibbonIcon("bot", "DuoAI-Agent-hub", () => this.activateView());
     this.addCommand({
       id: "open-chat",
       name: "打开 Agent 对话",
@@ -96,9 +97,9 @@ export default class AgentHubPlugin extends Plugin {
       selectedModels: { ...(loaded.selectedModels ?? {}) },
       cliPaths: { ...(loaded.cliPaths ?? {}) },
     };
-    delete (this.settings as any).api;
-    delete (this.settings as any).pat;
-    delete (this.settings as any).maxApiIterations;
+    Reflect.deleteProperty(this.settings, "api");
+    Reflect.deleteProperty(this.settings, "pat");
+    Reflect.deleteProperty(this.settings, "maxApiIterations");
     setLangOverride(this.settings.language);
   }
 
@@ -153,8 +154,8 @@ export default class AgentHubPlugin extends Plugin {
   async loadHistory(): Promise<Conversation[]> {
     try {
       const raw = await this.app.vault.adapter.read(this.historyFile());
-      const data = JSON.parse(raw);
-      return Array.isArray(data.conversations) ? data.conversations : [];
+      const data = rec(JSON.parse(raw));
+      return Array.isArray(data.conversations) ? (data.conversations as Conversation[]) : [];
     } catch {
       return [];
     }

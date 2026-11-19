@@ -4,6 +4,7 @@ import * as crypto from "crypto";
 import { ConfirmHandler, PermissionMode } from "../types";
 import { TOOL_DEFS, VaultTools, summarize } from "./tools";
 import { t } from "../i18n";
+import { rec } from "../agents/guards";
 
 /**
  * 本地安全桥：仅监听 127.0.0.1，随机端口 + 会话令牌。
@@ -92,18 +93,20 @@ export class BridgeServer {
       }
       if (req.method === "POST" && url === "/call") {
         const body = await readBody(req, 2 * 1024 * 1024);
-        const { name, arguments: args } = JSON.parse(body);
+        const parsed = rec(JSON.parse(body));
+        const name = parsed.name;
+        const args = parsed.arguments;
         if (typeof name !== "string") return this.send(res, 400, { ok: false, error: "missing name" });
         try {
           const result = await this.executeGated(name, (args ?? {}) as Record<string, unknown>);
           return this.send(res, 200, { ok: true, result });
-        } catch (e: any) {
-          return this.send(res, 200, { ok: false, error: String(e?.message ?? e) });
+        } catch (e) {
+          return this.send(res, 200, { ok: false, error: String(rec(e).message ?? e) });
         }
       }
       this.send(res, 404, { ok: false, error: "not found" });
-    } catch (e: any) {
-      this.send(res, 500, { ok: false, error: String(e?.message ?? e) });
+    } catch (e) {
+      this.send(res, 500, { ok: false, error: String(rec(e).message ?? e) });
     }
   }
 }

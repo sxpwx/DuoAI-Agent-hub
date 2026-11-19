@@ -5,6 +5,7 @@ import { readCosyCred, cosyPatLogin, readClaudeLocalOAuth } from "./agents/qwenw
 import { CliAgentSpec, NativeAgentSpec } from "./types";
 import { LoginModal } from "./ui/login-modal";
 import { t, t2 } from "./i18n";
+import { rec } from "./agents/guards";
 import type AgentHubPlugin from "./main";
 
 export class AgentHubSettingTab extends PluginSettingTab {
@@ -15,7 +16,7 @@ export class AgentHubSettingTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: t("settingsTitle") });
+    new Setting(containerEl).setName(t("settingsTitle")).setHeading();
 
     new Setting(containerEl)
       .setName(t2("language"))
@@ -71,13 +72,13 @@ export class AgentHubSettingTab extends PluginSettingTab {
       );
 
     for (const spec of AGENTS) {
-      containerEl.createEl("h3", { text: spec.label });
+      new Setting(containerEl).setName(spec.label).setHeading();
       containerEl.createEl("p", { cls: "ah-setting-desc", text: t2(`agent.${spec.id}.desc`) });
       if (spec.kind === "native") this.nativeSection(containerEl, spec);
       else if (spec.kind === "cli") this.cliSection(containerEl, spec);
     }
 
-    containerEl.createEl("h3", { text: t("securityTitle") });
+    new Setting(containerEl).setName(t("securityTitle")).setHeading();
     containerEl.createEl("p", { cls: "ah-setting-desc", text: t2("securityDesc", undefined, "\n") });
   }
 
@@ -161,8 +162,8 @@ export class AgentHubSettingTab extends PluginSettingTab {
               await cosyPatLogin(spec.site!, pat);
               renderStatus();
               new Notice(t("patOk"));
-            } catch (e: any) {
-              new Notice(String(e?.message ?? e));
+            } catch (e) {
+              new Notice(String(rec(e).message ?? e));
             }
           });
         });

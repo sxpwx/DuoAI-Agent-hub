@@ -1,6 +1,7 @@
 import * as crypto from "crypto";
 import * as https from "https";
 import * as os from "os";
+import { arr, rec, str } from "./guards";
 
 /**
  * 千问办公 / Qoder CN 公有云聊天协议内置实现（COSY 签名 + 请求体编解码 + SSE）。
@@ -193,22 +194,27 @@ function chatHeaders(url: string, u: CosyCred, body: string, modelKey: string, s
 }
 
 // ---- 消息转换（OpenAI → Qoder content blocks） ----
-type Msg = { role: string; content?: unknown; tool_calls?: any[]; tool_call_id?: string; reasoning_content?: string };
+interface ToolCall {
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: unknown };
+}
+type Msg = { role: string; content?: unknown; tool_calls?: ToolCall[]; tool_call_id?: string; reasoning_content?: string };
 
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.map((p: any) => (p?.type === "text" ? p.text ?? "" : "")).join("");
+  if (Array.isArray(content)) return arr(content).map((p) => (rec(p).type === "text" ? str(rec(p).text) : "")).join("");
   return "";
 }
-function blocksOf(content: unknown): any[] {
+function blocksOf(content: unknown): Record<string, unknown>[] {
   if (typeof content === "string") return content.trim() ? [{ type: "text", text: content }] : [];
-  if (Array.isArray(content)) return content.filter((p: any) => p?.type === "text" && (p.text ?? "").trim());
+  if (Array.isArray(content)) return arr(content).filter((p) => rec(p).type === "text" && str(rec(p).text).trim()) as Record<string, unknown>[];
   return [];
 }
 
-function qoderMessages(msgs: Msg[]): any[] {
-  const out: any[] = [];
-  let seen: any[] = [];
+function qoderMessages(msgs: Msg[]): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  let seen: Record<string, unknown>[] = [];
   const showSeen = () => {
     if (seen.length) out.push({ role: "user", content: seen });
     seen = [];
@@ -272,12 +278,12 @@ function qoderMessages(msgs: Msg[]): any[] {
   return out;
 }
 
-function cacheMarked(msgs: any[]): any[] {
+function cacheMarked(msgs: Record<string, unknown>[]): Record<string, unknown>[] {
   const out = msgs.map((m) => (m.role === "user" && Array.isArray(m.content) ? { ...m, contents: m.content } : m));
   const last = out[out.length - 1];
   if (last?.role !== "user" || !Array.isArray(last.content) || !last.content.length) return out;
-  const blocks = last.content.slice();
-  blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: { type: "ephemeral" } };
+  const blocks = arr(last.content).slice();
+  blocks[blocks.length - 1] = { ...rec(blocks[blocks.length - 1]), cache_control: { type: "ephemeral" } };
   out[out.length - 1] = { ...last, content: blocks, contents: blocks };
   return out;
 }
@@ -390,12 +396,12 @@ export async function fetchCosyModels(cred: CosyCred, siteId: string): Promise<{
   try {
     const res = await httpsRequest(url, "GET", cosyHeaders(url, cred, "", site));
     if (res.statusCode !== 200) return [];
-    const json = JSON.parse(await readAll(res));
-    const arr = site.modelScene ? json?.[site.modelScene] : Object.values(json ?? {}).find((v) => Array.isArray(v));
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .filter((m: any) => m?.key && m.enable !== false)
-      .map((m: any) => ({ key: String(m.key), display_name: String(m.display_name ?? m.name ?? m.key) }));
+    const json = rec(JSON.parse(await readAll(res)));
+    const list = site.modelScene ? json[site.modelScene] : Object.values(json).find((v) => Array.isArray(v));
+    if (!Array.isArray(list)) return [];
+    return arr(list)
+      .filter((m) => rec(m).key && rec(m).enable !== false)
+      .map((m) => ({ key: String(rec(m).key), display_name: String(rec(m).display_name ?? rec(m).name ?? rec(m).key) }));
   } catch {
     return [];
   }
@@ -447,49 +453,54 @@ async function* parseEvents(res: import("http").IncomingMessage, signal?: AbortS
   while (!done || lines.length) {
     if (signal?.aborted) return;
     if (!lines.length) {
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => window.setTimeout(r, 20));
       continue;
     }
     const line = lines.shift()!;
     if (!line.startsWith("data:")) continue;
     const payload = line.slice(5).trim();
-    let env: any;
+    let env: unknown;
     try {
       env = JSON.parse(payload);
     } catch {
       continue;
     }
-    const inner = typeof env?.body === "string" ? env.body : "";
-    if (env?.statusCodeValue != null && env.statusCodeValue !== 200) {
-      yield { kind: "error", message: `网关错误 ${env.statusCodeValue}：${inner.slice(0, 300)}` };
+    const ev = rec(env);
+    const inner = typeof ev.body === "string" ? ev.body : "";
+    if (ev.statusCodeValue != null && ev.statusCodeValue !== 200) {
+      yield { kind: "error", message: `网关错误 ${ev.statusCodeValue}：${inner.slice(0, 300)}` };
       return;
     }
     if (inner.trim() === "[DONE]") break;
-    let chunk: any;
+    let chunk: unknown;
     try {
       chunk = JSON.parse(inner.trim());
     } catch {
       continue;
     }
-    if (!Array.isArray(chunk?.choices) && (chunk?.error || (chunk?.code != null && chunk?.message))) {
-      yield { kind: "error", message: String(chunk?.error?.message ?? chunk?.message ?? inner).slice(0, 300) };
+    const ch = rec(chunk);
+    if (!Array.isArray(ch.choices) && (ch.error || (ch.code != null && ch.message))) {
+      yield { kind: "error", message: String(rec(ch.error).message ?? ch.message ?? inner).slice(0, 300) };
       return;
     }
-    const delta = chunk?.choices?.[0]?.delta ?? {};
+    const choice = rec(arr(ch.choices)[0]);
+    const delta = rec(choice.delta);
     if (typeof delta.content === "string" && delta.content) {
       yield { kind: "text", text: delta.content };
     }
-    for (const tc of delta.tool_calls ?? []) {
+    for (const tcRaw of arr(delta.tool_calls)) {
+      const tc = rec(tcRaw);
+      const fn = rec(tc.function);
       const i = Number(tc.index ?? 0);
-      const name = typeof tc.function?.name === "string" ? tc.function.name.trim() : "";
-      const args = tc.function?.arguments ?? "";
+      const name = typeof fn.name === "string" ? fn.name.trim() : "";
+      const args = str(fn.arguments);
       if (!tc.id && !name && !args) continue;
       let call = native.get(i);
       if (!call || (tc.id && call.id && tc.id !== call.id)) {
         call = { id: "", args: "" };
         native.set(i, call);
       }
-      if (tc.id) call.id = tc.id;
+      if (tc.id) call.id = str(tc.id);
       if (call.index === undefined) {
         call.args += args;
         if (!name) continue;
@@ -500,8 +511,8 @@ async function* parseEvents(res: import("http").IncomingMessage, signal?: AbortS
         yield { kind: "args", index: call.index, text: args };
       }
     }
-    fr = chunk?.choices?.[0]?.finish_reason || fr;
-    if (chunk?.usage) usage = chunk.usage;
+    fr = str(choice.finish_reason) || fr;
+    if (ch.usage) usage = ch.usage;
   }
   await ended;
   yield { kind: "stop", stop: fr === "tool_calls" || [...native.values()].some((c) => c.emitted) ? "tool_calls" : fr === "length" ? "length" : "stop", usage };
