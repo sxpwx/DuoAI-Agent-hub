@@ -50,8 +50,15 @@ export class LoginModal extends Modal {
       this.buildCredForm(contentEl);
     } else {
       contentEl.createEl("p", { cls: "ah-confirm-hint", text: t("replHint") });
-      if (this.spec.login?.custom === "codebuddy-daemon") void this.beginCodebuddy();
-      else this.beginRepl();
+      if (this.spec.login?.custom === "codebuddy-daemon") {
+        const btn = contentEl.createEl("button", { text: t("openBrowser"), cls: "mod-cta" });
+        btn.addEventListener("click", () => {
+          void this.beginCodebuddy();
+        });
+        void this.beginCodebuddy();
+      } else {
+        void this.beginRepl();
+      }
     }
 
     const btns = contentEl.createDiv({ cls: "ah-confirm-buttons" });

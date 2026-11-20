@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 import { requestUrl } from "obsidian";
 import { resolveCli, whichSync } from "./detect";
 import { rec, str } from "./guards";
@@ -37,37 +37,73 @@ function gatewayPassword(): string | null {
   }
 }
 
-function runCli(args: string[], timeoutMs = 30000): string {
-  const cli = cliPath();
-  if (!cli) return "";
-  const resolved = resolveCli(cli);
-  if (!resolved) return "";
-  const r = spawnSync(resolved.exe, [...resolved.prefixArgs, ...args], {
-    encoding: "utf8",
-    timeout: timeoutMs,
-    windowsHide: true,
-    env: { ...process.env, ...resolved.env },
+/** 异步查询守护进程 endpoint（不阻塞渲染线程） */
+function daemonStatus(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const cli = cliPath();
+    const resolved = cli ? resolveCli(cli) : null;
+    if (!resolved) return resolve(null);
+    let out = "";
+    let settled = false;
+    const finish = (v: string | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
+    try {
+      const child = spawn(resolved.exe, [...resolved.prefixArgs, "daemon", "status"], {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, ...resolved.env },
+      });
+      const timer = window.setTimeout(() => {
+        child.kill();
+        finish(null);
+      }, 10000);
+      child.stdout?.on("data", (d: Buffer) => (out += d.toString()));
+      child.stderr?.on("data", (d: Buffer) => (out += d.toString()));
+      child.on("error", () => {
+        window.clearTimeout(timer);
+        finish(null);
+      });
+      child.on("close", () => {
+        window.clearTimeout(timer);
+        try {
+          const j = rec(JSON.parse(out.slice(out.indexOf("{"))));
+          finish(j.status === "running" && j.endpoint ? str(j.endpoint) : null);
+        } catch {
+          finish(null);
+        }
+      });
+    } catch {
+      finish(null);
+    }
   });
-  return (r.stdout ?? "") + (r.stderr ?? "");
 }
 
-/** 获取守护进程 endpoint；未运行则启动 */
-export function ensureDaemon(): string | null {
-  const status = runCli(["daemon", "status"]);
+/** 获取守护进程 endpoint；未运行则以 detached 方式启动并轮询等待 */
+export async function ensureDaemon(): Promise<string | null> {
+  const running = await daemonStatus();
+  if (running) return running;
+  const cli = cliPath();
+  const resolved = cli ? resolveCli(cli) : null;
+  if (!resolved) return null;
   try {
-    const j = rec(JSON.parse(status.slice(status.indexOf("{"))));
-    if (j.status === "running" && j.endpoint) return str(j.endpoint);
+    const child = spawn(resolved.exe, [...resolved.prefixArgs, "daemon", "start"], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      env: { ...process.env, ...resolved.env },
+    });
+    child.unref();
   } catch {
-    /* fallthrough */
+    return null;
   }
-  const out = runCli(["daemon", "start"], 60000);
-  const m = out.match(/https?:\/\/127\.0\.0\.1:\d+/);
-  if (m) return m[0];
-  try {
-    const j = rec(JSON.parse(runCli(["daemon", "status"]).slice(status.indexOf("{"))));
-    if (j.status === "running" && j.endpoint) return str(j.endpoint);
-  } catch {
-    /* ignore */
+  for (let i = 0; i < 25; i++) {
+    await new Promise((r) => window.setTimeout(r, 1000));
+    const ep = await daemonStatus();
+    if (ep) return ep;
   }
   return null;
 }
@@ -80,14 +116,7 @@ function headers(pw: string): Record<string, string> {
 export async function codebuddyAuthStatus(): Promise<boolean | null> {
   const pw = gatewayPassword();
   if (!pw) return null;
-  const status = runCli(["daemon", "status"]);
-  let endpoint: string | null = null;
-  try {
-    const j = rec(JSON.parse(status.slice(status.indexOf("{"))));
-    if (j.status === "running" && j.endpoint) endpoint = str(j.endpoint);
-  } catch {
-    /* ignore */
-  }
+  const endpoint = await daemonStatus();
   if (!endpoint) return false;
   try {
     const r = await requestUrl({ url: endpoint + "/api/v1/auth/account/status", headers: headers(pw), throw: false });
@@ -103,7 +132,7 @@ export async function codebuddyAuthStatus(): Promise<boolean | null> {
 
 /** 仅发起授权，返回浏览器授权 URL（不轮询）。method: internal=国内站 / external=国际站 */
 export async function codebuddyStartLogin(method = "internal"): Promise<string> {
-  const endpoint = ensureDaemon();
+  const endpoint = await ensureDaemon();
   if (!endpoint) throw new Error("无法启动 codebuddy 守护进程 / cannot start codebuddy daemon");
   const pw = gatewayPassword();
   if (!pw) throw new Error("缺少守护进程凭据（settings.json gateway.password）/ missing daemon gateway password");
@@ -133,7 +162,7 @@ export async function codebuddyLogin(
   timeoutMs = 5 * 60 * 1000,
   method = "internal"
 ): Promise<void> {
-  const endpoint = ensureDaemon();
+  const endpoint = await ensureDaemon();
   if (!endpoint) throw new Error("无法启动 codebuddy 守护进程 / cannot start codebuddy daemon");
   const pw = gatewayPassword();
   if (!pw) throw new Error("缺少守护进程凭据（settings.json gateway.password）/ missing daemon gateway password");
