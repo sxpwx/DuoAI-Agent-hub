@@ -82,10 +82,23 @@ function daemonStatus(): Promise<string | null> {
   });
 }
 
+/** 直接探测本地认证服务（WorkBuddy 桌面版或守护进程均可提供） */
+async function probeEndpoint(): Promise<string | null> {
+  try {
+    const r = await requestUrl({ url: "http://127.0.0.1:9527/api/v1/auth/status", throw: false });
+    if (r.status === 200) return "http://127.0.0.1:9527";
+  } catch {
+    /* 未监听 */
+  }
+  return null;
+}
+
 /** 获取守护进程 endpoint；未运行则以 detached 方式启动并轮询等待 */
 export async function ensureDaemon(): Promise<string | null> {
   const running = await daemonStatus();
   if (running) return running;
+  const probed = await probeEndpoint();
+  if (probed) return probed;
   const cli = cliPath();
   const resolved = cli ? resolveCli(cli) : null;
   if (!resolved) return null;
@@ -100,9 +113,9 @@ export async function ensureDaemon(): Promise<string | null> {
   } catch {
     return null;
   }
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < 40; i++) {
     await new Promise((r) => window.setTimeout(r, 1000));
-    const ep = await daemonStatus();
+    const ep = (await daemonStatus()) ?? (await probeEndpoint());
     if (ep) return ep;
   }
   return null;
@@ -116,7 +129,7 @@ function headers(pw: string): Record<string, string> {
 export async function codebuddyAuthStatus(): Promise<boolean | null> {
   const pw = gatewayPassword();
   if (!pw) return null;
-  const endpoint = await daemonStatus();
+  const endpoint = (await daemonStatus()) ?? (await probeEndpoint());
   if (!endpoint) return false;
   try {
     const r = await requestUrl({ url: endpoint + "/api/v1/auth/account/status", headers: headers(pw), throw: false });
